@@ -33,7 +33,10 @@ python -m lerobot.record_handshake \
     --dataset.repo_id=your_username/handshake_dataset \
     --dataset.num_episodes=10 \
     --dataset.single_task="Shake hands with person when they extend their hand" \
+    --dataset.episode_time_s=30 \      # 30-second recording episodes \
+    --dataset.reset_time_s=15          # 15-second reset time between episodes
 ```
+You can use left arrow key to re-record the episode and right arrow key to early exit the recording.
 """
 
 import logging
@@ -60,17 +63,13 @@ from lerobot.common.policies.pretrained import PreTrainedPolicy
 from lerobot.common.robots import (  # noqa: F401
     Robot,
     RobotConfig,
-    koch_follower,
     make_robot_from_config,
-    so100_follower,
     so101_follower,
 )
 from lerobot.common.teleoperators import (  # noqa: F401
     Teleoperator,
     TeleoperatorConfig,
-    koch_leader,
     make_teleoperator_from_config,
-    so100_leader,
     so101_leader,
 )
 from lerobot.common.utils.control_utils import (
@@ -109,10 +108,6 @@ class HandshakeDatasetRecordConfig:
     num_episodes: int = 50
     # Encode frames in the dataset into video
     video: bool = True
-    # Upload dataset to Hugging Face hub.
-    push_to_hub: bool = True
-    # Upload on private repository on the Hugging Face hub.
-    private: bool = False
     # Add tags to your dataset on the hub.
     tags: list[str] | None = None
     # Number of subprocesses handling the saving of frames as PNG. Set to 0 to use threads only;
@@ -479,9 +474,6 @@ def record_handshake(cfg: HandshakeRecordConfig) -> LeRobotDataset:
 
     # Close OpenCV windows
     cv2.destroyAllWindows()
-
-    if cfg.dataset.push_to_hub:
-        dataset.push_to_hub(tags=cfg.dataset.tags, private=cfg.dataset.private)
 
     log_say("Exiting", cfg.play_sounds)
     return dataset

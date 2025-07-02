@@ -13,6 +13,34 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
+"""
+Training script specialized for handshake interaction tasks.
+
+This script trains policies to perform handshake gestures with humans using SO-101 robot arms.
+It expects datasets recorded with handshake detection data and is optimized for imitation learning
+of human-robot handshake interactions.
+
+Example usage:
+
+```bash
+python lerobot/scripts/train_handshake.py \
+    --dataset.repo_id=your_username/handshake_dataset \
+    --policy.type=act \
+    --output_dir=outputs/train/handshake_act \
+    --job_name=handshake_training \
+    --policy.device=cuda \
+    --wandb.enable=true
+```
+
+The script will:
+1. Load a handshake dataset (recorded with record_handshake.py)
+2. Validate that handshake detection features are present
+3. Train a policy to imitate the recorded handshake actions
+4. Log handshake-specific metrics during training
+5. Save trained models for deployment on SO-101 robots
+"""
+
 import logging
 import time
 from contextlib import nullcontext
@@ -53,7 +81,68 @@ from lerobot.configs.train import TrainPipelineConfig
 from lerobot.scripts.eval import eval_policy
 
 
-def update_policy(
+def validate_handshake_dataset(dataset):
+    """
+    Validate that the dataset contains required handshake detection features.
+    
+    Args:
+        dataset: LeRobotDataset instance
+        
+    Raises:
+        ValueError: If required handshake features are missing
+    """
+    required_features = [
+        "observation.handshake_ready",
+        "observation.handshake_confidence", 
+        "observation.hand_position_x",
+        "observation.hand_position_y"
+    ]
+    
+    missing_features = []
+    for feature in required_features:
+        if feature not in dataset.features:
+            missing_features.append(feature)
+    
+    if missing_features:
+        raise ValueError(
+            f"Dataset is missing required handshake detection features: {missing_features}. "
+            f"Please record data using record_handshake.py to include handshake detection."
+        )
+    
+    logging.info("✓ Dataset contains all required handshake detection features")
+
+
+def compute_handshake_metrics(batch: dict) -> dict:
+    """
+    Compute handshake-specific metrics from a training batch.
+    
+    Args:
+        batch: Training batch dictionary
+        
+    Returns:
+        Dictionary of handshake metrics
+    """
+    metrics = {}
+    
+    # Extract handshake detection data if present
+    if "observation.handshake_ready" in batch:
+        handshake_ready = batch["observation.handshake_ready"]
+        if isinstance(handshake_ready, torch.Tensor):
+            # Percentage of frames where handshake was detected
+            handshake_detection_rate = handshake_ready.float().mean().item() * 100
+            metrics["handshake_detection_rate"] = handshake_detection_rate
+    
+    if "observation.handshake_confidence" in batch:
+        handshake_conf = batch["observation.handshake_confidence"]
+        if isinstance(handshake_conf, torch.Tensor):
+            # Average confidence of handshake detection
+            avg_confidence = handshake_conf.mean().item()
+            metrics["avg_handshake_confidence"] = avg_confidence
+    
+    return metrics
+
+
+def update_handshake_policy(
     train_metrics: MetricsTracker,
     policy: PreTrainedPolicy,
     batch: Any,
@@ -64,12 +153,25 @@ def update_policy(
     use_amp: bool = False,
     lock=None,
 ) -> tuple[MetricsTracker, dict]:
+    """
+    Update policy with handshake-specific metrics tracking.
+    
+    This function extends the standard policy update with handshake-specific
+    metrics computation and logging.
+    """
     start_time = time.perf_counter()
     device = get_device_from_parameters(policy)
     policy.train()
+    
     with torch.autocast(device_type=device.type) if use_amp else nullcontext():
         loss, output_dict = policy.forward(batch)
-        # TODO(rcadene): policy.unnormalize_outputs(out_dict)
+        
+        # Add handshake-specific metrics to output
+        handshake_metrics = compute_handshake_metrics(batch)
+        if output_dict is None:
+            output_dict = {}
+        output_dict.update(handshake_metrics)
+    
     grad_scaler.scale(loss).backward()
 
     # Unscale the gradient of the optimizer's assigned params in-place **prior to gradient clipping**.
@@ -106,8 +208,17 @@ def update_policy(
 
 
 @parser.wrap()
-def train(cfg: TrainPipelineConfig):
+def train_handshake(cfg: TrainPipelineConfig):
+    """
+    Train a policy for handshake interaction tasks.
+    
+    This function specializes the standard training pipeline for handshake tasks,
+    including validation of handshake features and tracking of handshake-specific metrics.
+    """
     cfg.validate()
+    logging.info("=" * 60)
+    logging.info("STARTING HANDSHAKE POLICY TRAINING")
+    logging.info("=" * 60)
     logging.info(pformat(cfg.to_dict()))
 
     if cfg.wandb.enable and cfg.wandb.project:
@@ -124,18 +235,24 @@ def train(cfg: TrainPipelineConfig):
     torch.backends.cudnn.benchmark = True
     torch.backends.cuda.matmul.allow_tf32 = True
 
-    logging.info("Creating dataset")
+    logging.info("Creating handshake dataset")
     dataset = make_dataset(cfg)
+    
+    # Validate that dataset contains handshake detection features
+    validate_handshake_dataset(dataset)
 
-    # Create environment used for evaluating checkpoints during training on simulation data.
-    # On real-world data, no need to create an environment as evaluations are done outside train.py,
-    # using the eval.py instead, with gym_dora environment and dora-rs.
+    # For handshake tasks, we typically don't use simulation environments
+    # as evaluation is done on real robots during deployment
     eval_env = None
     if cfg.eval_freq > 0 and cfg.env is not None:
-        logging.info("Creating env")
+        logging.warning(
+            "Environment evaluation is enabled but not recommended for handshake tasks. "
+            "Handshake policies are typically evaluated on real robots."
+        )
+        logging.info("Creating evaluation environment")
         eval_env = make_env(cfg.env, n_envs=cfg.eval.batch_size, use_async_envs=cfg.eval.use_async_envs)
 
-    logging.info("Creating policy")
+    logging.info("Creating handshake policy")
     policy = make_policy(
         cfg=cfg.policy,
         ds_meta=dataset.meta,
@@ -153,16 +270,19 @@ def train(cfg: TrainPipelineConfig):
     num_learnable_params = sum(p.numel() for p in policy.parameters() if p.requires_grad)
     num_total_params = sum(p.numel() for p in policy.parameters())
 
+    # Log training information
+    logging.info(colored("Handshake Training Configuration:", "green", attrs=["bold"]))
     logging.info(colored("Output dir:", "yellow", attrs=["bold"]) + f" {cfg.output_dir}")
+    logging.info(f"Task: Handshake Interaction Learning")
     if cfg.env is not None:
         logging.info(f"{cfg.env.task=}")
-    logging.info(f"{cfg.steps=} ({format_big_number(cfg.steps)})")
-    logging.info(f"{dataset.num_frames=} ({format_big_number(dataset.num_frames)})")
-    logging.info(f"{dataset.num_episodes=}")
-    logging.info(f"{num_learnable_params=} ({format_big_number(num_learnable_params)})")
-    logging.info(f"{num_total_params=} ({format_big_number(num_total_params)})")
+    logging.info(f"Training steps: {cfg.steps} ({format_big_number(cfg.steps)})")
+    logging.info(f"Dataset frames: {dataset.num_frames} ({format_big_number(dataset.num_frames)})")
+    logging.info(f"Dataset episodes: {dataset.num_episodes}")
+    logging.info(f"Learnable parameters: {num_learnable_params} ({format_big_number(num_learnable_params)})")
+    logging.info(f"Total parameters: {num_total_params} ({format_big_number(num_total_params)})")
 
-    # create dataloader for offline training
+    # Create dataloader for offline training
     if hasattr(cfg.policy, "drop_n_last_frames"):
         shuffle = False
         sampler = EpisodeAwareSampler(
@@ -187,19 +307,23 @@ def train(cfg: TrainPipelineConfig):
 
     policy.train()
 
+    # Define training metrics including handshake-specific ones
     train_metrics = {
         "loss": AverageMeter("loss", ":.3f"),
         "grad_norm": AverageMeter("grdn", ":.3f"),
         "lr": AverageMeter("lr", ":0.1e"),
         "update_s": AverageMeter("updt_s", ":.3f"),
         "dataloading_s": AverageMeter("data_s", ":.3f"),
+        # Handshake-specific metrics
+        "handshake_detection_rate": AverageMeter("hs_rate", ":.1f"),
+        "avg_handshake_confidence": AverageMeter("hs_conf", ":.3f"),
     }
 
     train_tracker = MetricsTracker(
         cfg.batch_size, dataset.num_frames, dataset.num_episodes, train_metrics, initial_step=step
     )
 
-    logging.info("Start offline training on a fixed dataset")
+    logging.info("🤝 Starting offline training on handshake dataset")
     for _ in range(step, cfg.steps):
         start_time = time.perf_counter()
         batch = next(dl_iter)
@@ -209,7 +333,7 @@ def train(cfg: TrainPipelineConfig):
             if isinstance(batch[key], torch.Tensor):
                 batch[key] = batch[key].to(device, non_blocking=True)
 
-        train_tracker, output_dict = update_policy(
+        train_tracker, output_dict = update_handshake_policy(
             train_tracker,
             policy,
             batch,
@@ -219,6 +343,13 @@ def train(cfg: TrainPipelineConfig):
             lr_scheduler=lr_scheduler,
             use_amp=cfg.policy.use_amp,
         )
+        
+        # Update handshake-specific metrics
+        if output_dict:
+            if "handshake_detection_rate" in output_dict:
+                train_tracker.handshake_detection_rate = output_dict["handshake_detection_rate"]
+            if "avg_handshake_confidence" in output_dict:
+                train_tracker.avg_handshake_confidence = output_dict["avg_handshake_confidence"]
 
         # Note: eval and checkpoint happens *after* the `step`th training update has completed, so we
         # increment `step` here.
@@ -229,7 +360,7 @@ def train(cfg: TrainPipelineConfig):
         is_eval_step = cfg.eval_freq > 0 and step % cfg.eval_freq == 0
 
         if is_log_step:
-            logging.info(train_tracker)
+            logging.info(f"🤝 Handshake Training - {train_tracker}")
             if wandb_logger:
                 wandb_log_dict = train_tracker.to_dict()
                 if output_dict:
@@ -238,7 +369,7 @@ def train(cfg: TrainPipelineConfig):
             train_tracker.reset_averages()
 
         if cfg.save_checkpoint and is_saving_step:
-            logging.info(f"Checkpoint policy after step {step}")
+            logging.info(f"💾 Checkpoint handshake policy after step {step}")
             checkpoint_dir = get_step_checkpoint_dir(cfg.output_dir, cfg.steps, step)
             save_checkpoint(checkpoint_dir, step, cfg, policy, optimizer, lr_scheduler)
             update_last_checkpoint(checkpoint_dir)
@@ -247,7 +378,7 @@ def train(cfg: TrainPipelineConfig):
 
         if cfg.env and is_eval_step:
             step_id = get_step_identifier(step, cfg.steps)
-            logging.info(f"Eval policy at step {step}")
+            logging.info(f"📊 Eval handshake policy at step {step}")
             with (
                 torch.no_grad(),
                 torch.autocast(device_type=device.type) if cfg.policy.use_amp else nullcontext(),
@@ -280,12 +411,16 @@ def train(cfg: TrainPipelineConfig):
 
     if eval_env:
         eval_env.close()
-    logging.info("End of training")
+    
+    logging.info("🎉 Handshake policy training completed successfully!")
+    logging.info(f"📁 Trained model saved in: {cfg.output_dir}")
+    logging.info("🚀 Ready for deployment on SO-101 robot!")
 
     if cfg.policy.push_to_hub:
+        logging.info("⬆️  Pushing handshake policy to HuggingFace Hub...")
         policy.push_model_to_hub(cfg)
 
 
 if __name__ == "__main__":
     init_logging()
-    train()
+    train_handshake()
