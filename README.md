@@ -114,9 +114,9 @@ pip install -e .
    python lerobot/find_port.py
    ```
 4. **Test camera connection**:
-   ```bash
+```bash
    python lerobot/find_cameras.py opencv
-   ```
+```
 
 ### 3. Calibrate Your Robots
 

@@ -13,494 +13,502 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Evaluate a policy on an environment by running rollouts and computing metrics.
+
+"""
+Evaluate a trained policy on real handshake interactions with humans using SO-101 robot.
+
+This script evaluates policies by having them perform handshakes with real people,
+using handshake detection to determine when to start and measure success.
 
 Usage examples:
 
-You want to evaluate a model from the hub (eg: https://huggingface.co/lerobot/diffusion_pusht)
-for 10 episodes.
-
+Evaluate a trained handshake model:
 ```
-python lerobot/scripts/eval.py \
-    --policy.path=lerobot/diffusion_pusht \
-    --env.type=pusht \
-    --eval.batch_size=10 \
+python lerobot/scripts/eval_handshake.py \
+    --policy.path=outputs/train/handshake_act/checkpoints/010000/pretrained_model \
+    --robot.type=so101_follower \
+    --robot.port=/dev/tty.usbmodem58760431541 \
+    --robot.cameras="{main: {type: opencv, camera_index: 0, width: 640, height: 480}}" \
     --eval.n_episodes=10 \
-    --use_amp=false \
-    --device=cuda
+    --eval.episode_time_s=30 \
+    --eval.reset_time_s=10 \
+    --output_dir=outputs/eval/handshake_results
 ```
 
-OR, you want to evaluate a model checkpoint from the LeRobot training script for 10 episodes.
+Evaluate with video recording:
 ```
-python lerobot/scripts/eval.py \
-    --policy.path=outputs/train/diffusion_pusht/checkpoints/005000/pretrained_model \
-    --env.type=pusht \
-    --eval.batch_size=10 \
-    --eval.n_episodes=10 \
-    --use_amp=false \
-    --device=cuda
+python lerobot/scripts/eval_handshake.py \
+    --policy.path=lerobot/your_trained_handshake_model \
+    --robot.type=so101_follower \
+    --robot.port=/dev/tty.usbmodem58760431541 \
+    --robot.cameras="{main: {type: opencv, camera_index: 0, width: 640, height: 480}}" \
+    --eval.n_episodes=5 \
+    --eval.save_videos=true \
+    --eval.handshake_timeout_s=45
 ```
-
-Note that in both examples, the repo/folder should contain at least `config.json` and `model.safetensors` files.
-
-You can learn about the CLI options for this script in the `EvalPipelineConfig` in lerobot/configs/eval.py
 """
 
 import json
 import logging
-import threading
 import time
-from contextlib import nullcontext
-from copy import deepcopy
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from pprint import pformat
-from typing import Callable
+from typing import Any
 
-import einops
-import gymnasium as gym
+import cv2
 import numpy as np
 import torch
 from termcolor import colored
-from torch import Tensor, nn
 from tqdm import trange
 
-from lerobot.common.envs.factory import make_env
-from lerobot.common.envs.utils import add_envs_task, check_env_attributes_and_types, preprocess_observation
+from lerobot.common.cameras import CameraConfig
+from lerobot.common.cameras.opencv.configuration_opencv import OpenCVCameraConfig
+from lerobot.common.cameras.realsense.configuration_realsense import RealSenseCameraConfig
+from lerobot.common.handshake_detection import ImprovedHandshakeDetector
 from lerobot.common.policies.factory import make_policy
 from lerobot.common.policies.pretrained import PreTrainedPolicy
-from lerobot.common.policies.utils import get_device_from_parameters
-from lerobot.common.utils.io_utils import write_video
-from lerobot.common.utils.random_utils import set_seed
+from lerobot.common.robots import (
+    Robot,
+    RobotConfig,
+    make_robot_from_config,
+    so101_follower,
+)
+from lerobot.common.utils.control_utils import init_keyboard_listener, predict_action
+from lerobot.common.utils.robot_utils import busy_wait
 from lerobot.common.utils.utils import (
     get_safe_torch_device,
     init_logging,
-    inside_slurm,
+    log_say,
 )
 from lerobot.configs import parser
-from lerobot.configs.eval import EvalPipelineConfig
+from lerobot.configs.policies import PreTrainedConfig
 
 
-def rollout(
-    env: gym.vector.VectorEnv,
-    policy: PreTrainedPolicy,
-    seeds: list[int] | None = None,
-    return_observations: bool = False,
-    render_callback: Callable[[gym.vector.VectorEnv], None] | None = None,
-) -> dict:
-    """Run a batched policy rollout once through a batch of environments.
+@dataclass
+class HandshakeEvalConfig:
+    """Configuration for handshake evaluation parameters."""
+    # Number of handshake episodes to evaluate
+    n_episodes: int = 10
+    # Maximum time to wait for person to extend hand (seconds)
+    handshake_timeout_s: float = 10.0
+    # Time for each handshake interaction (seconds)
+    episode_time_s: float = 30.0
+    # Reset time between episodes (seconds)
+    reset_time_s: float = 15.0
+    # Handshake detection confidence threshold (0-1)
+    handshake_confidence_threshold: float = 0.8
+    # Minimum handshake confidence required for success evaluation
+    success_confidence_threshold: float = 0.9
+    # Whether to save evaluation videos
+    save_videos: bool = False
+    # Whether to display camera feed during evaluation
+    display_data: bool = True
+    # Whether to use voice announcements
+    play_sounds: bool = True
 
-    Note that all environments in the batch are run until the last environment is done. This means some
-    data will probably need to be discarded (for environments that aren't the first one to be done).
 
-    The return dictionary contains:
-        (optional) "observation": A dictionary of (batch, sequence + 1, *) tensors mapped to observation
-            keys. NOTE that this has an extra sequence element relative to the other keys in the
-            dictionary. This is because an extra observation is included for after the environment is
-            terminated or truncated.
-        "action": A (batch, sequence, action_dim) tensor of actions applied based on the observations (not
-            including the last observations).
-        "reward": A (batch, sequence) tensor of rewards received for applying the actions.
-        "success": A (batch, sequence) tensor of success conditions (the only time this can be True is upon
-            environment termination/truncation).
-        "done": A (batch, sequence) tensor of **cumulative** done conditions. For any given batch element,
-            the first True is followed by True's all the way till the end. This can be used for masking
-            extraneous elements from the sequences above.
+@dataclass
+class HandshakeEvalPipelineConfig:
+    """Complete configuration for handshake evaluation pipeline."""
+    robot: RobotConfig
+    policy: PreTrainedConfig
+    eval: HandshakeEvalConfig = HandshakeEvalConfig()
+    output_dir: str = "outputs/eval/handshake"
+    device: str = "cpu"
+    
+    def __post_init__(self):
+        # Parse policy path if provided via CLI
+        policy_path = parser.get_path_arg("policy")
+        if policy_path:
+            cli_overrides = parser.get_cli_overrides("policy")
+            self.policy = PreTrainedConfig.from_pretrained(policy_path, cli_overrides=cli_overrides)
+            self.policy.pretrained_path = policy_path
+    
+    @classmethod
+    def __get_path_fields__(cls) -> list[str]:
+        return ["policy"]
 
-    Args:
-        env: The batch of environments.
-        policy: The policy. Must be a PyTorch nn module.
-        seeds: The environments are seeded once at the start of the rollout. If provided, this argument
-            specifies the seeds for each of the environments.
-        return_observations: Whether to include all observations in the returned rollout data. Observations
-            are returned optionally because they typically take more memory to cache. Defaults to False.
-        render_callback: Optional rendering callback to be used after the environments are reset, and after
-            every step.
-    Returns:
-        The dictionary described above.
+
+def wait_for_handshake_detection(
+    robot: Robot, 
+    handshake_detector: ImprovedHandshakeDetector,
+    main_camera_name: str,
+    timeout_s: float,
+    confidence_threshold: float,
+    display_data: bool = False
+) -> tuple[bool, float]:
     """
-    assert isinstance(policy, nn.Module), "Policy must be a PyTorch nn module."
-    device = get_device_from_parameters(policy)
+    Wait for handshake detection and return whether detected and final confidence.
+    
+    Returns:
+        (detected: bool, confidence: float)
+    """
+    log_say("Waiting for person to extend their hand for handshake...", True)
+    
+    start_time = time.perf_counter()
+    max_confidence = 0.0
+    
+    while time.perf_counter() - start_time < timeout_s:
+        observation = robot.get_observation()
+        
+        if main_camera_name not in observation:
+            continue
+            
+        frame = observation[main_camera_name]
+        detection_result = handshake_detector.detect_handshake_gesture(frame, visualize=display_data)
+        
+        max_confidence = max(max_confidence, detection_result['confidence'])
+        
+        if detection_result['ready'] and detection_result['confidence'] >= confidence_threshold:
+            log_say("Handshake detected! Starting policy evaluation...", True)
+            return True, detection_result['confidence']
+            
+        if display_data and 'annotated_frame' in detection_result:
+            cv2.imshow('Handshake Detection', detection_result['annotated_frame'])
+            if cv2.waitKey(1) & 0xFF == 27:  # ESC key
+                break
+                
+        time.sleep(0.1)  # Small delay to prevent overwhelming the system
+    
+    log_say("Timeout waiting for handshake detection.", True)
+    return False, max_confidence
 
-    # Reset the policy and environments.
+
+def evaluate_handshake_episode(
+    robot: Robot,
+    policy: PreTrainedPolicy,
+    handshake_detector: ImprovedHandshakeDetector,
+    main_camera_name: str,
+    episode_time_s: float,
+    success_confidence_threshold: float,
+    display_data: bool = False,
+    save_video: bool = False,
+    episode_ix: int = 0,
+    output_dir: Path = None
+) -> dict[str, Any]:
+    """
+    Evaluate a single handshake episode.
+    
+    Returns:
+        Dictionary with episode metrics and data
+    """
+    episode_start_time = time.perf_counter()
+    frames_for_video = []
+    handshake_confidences = []
+    policy_actions = []
+    robot_states = []
+    timestamps = []
+    
     policy.reset()
-    observation, info = env.reset(seed=seeds)
-    if render_callback is not None:
-        render_callback(env)
-
-    all_observations = []
-    all_actions = []
-    all_rewards = []
-    all_successes = []
-    all_dones = []
-
+    
+    log_say(f"Starting handshake episode {episode_ix + 1}...", True)
+    
     step = 0
-    # Keep track of which environments are done.
-    done = np.array([False] * env.num_envs)
-    max_steps = env.call("_max_episode_steps")[0]
-    progbar = trange(
-        max_steps,
-        desc=f"Running rollout with at most {max_steps} steps",
-        disable=inside_slurm(),  # we dont want progress bar when we use slurm, since it clutters the logs
-        leave=False,
-    )
-    check_env_attributes_and_types(env)
-    while not np.all(done):
-        # Numpy array to tensor and changing dictionary keys to LeRobot policy format.
-        observation = preprocess_observation(observation)
-        if return_observations:
-            all_observations.append(deepcopy(observation))
-
-        observation = {
-            key: observation[key].to(device, non_blocking=device.type == "cuda") for key in observation
-        }
-
-        # Infer "task" from attributes of environments.
-        # TODO: works with SyncVectorEnv but not AsyncVectorEnv
-        observation = add_envs_task(env, observation)
-
+    max_steps = int(episode_time_s * 30)  # Assume ~30 FPS
+    
+    while step < max_steps:
+        step_start_time = time.perf_counter()
+        
+        # Get robot observation
+        observation = robot.get_observation()
+        
+        if main_camera_name not in observation:
+            continue
+            
+        frame = observation[main_camera_name]
+        
+        # Run handshake detection
+        detection_result = handshake_detector.detect_handshake_gesture(frame, visualize=display_data)
+        handshake_confidences.append(detection_result['confidence'])
+        
+        # Prepare observation for policy
+        policy_observation = {}
+        for key, value in observation.items():
+            if key.startswith('observation.'):
+                policy_observation[key] = torch.from_numpy(value).unsqueeze(0).float()
+            elif isinstance(value, np.ndarray):
+                # Camera observations
+                policy_observation[f'observation.images.{key}'] = torch.from_numpy(value).unsqueeze(0)
+        
+        # Add handshake detection features
+        policy_observation['observation.handshake_ready'] = torch.tensor([[detection_result['ready']]], dtype=torch.bool)
+        policy_observation['observation.handshake_confidence'] = torch.tensor([[detection_result['confidence']]], dtype=torch.float32)
+        
+        if detection_result['hand_position']:
+            policy_observation['observation.hand_position_x'] = torch.tensor([[detection_result['hand_position'][0]]], dtype=torch.float32)
+            policy_observation['observation.hand_position_y'] = torch.tensor([[detection_result['hand_position'][1]]], dtype=torch.float32)
+        else:
+            policy_observation['observation.hand_position_x'] = torch.tensor([[0.0]], dtype=torch.float32)
+            policy_observation['observation.hand_position_y'] = torch.tensor([[0.0]], dtype=torch.float32)
+        
+        # Move to device
+        device = next(policy.parameters()).device
+        for key in policy_observation:
+            policy_observation[key] = policy_observation[key].to(device)
+        
+        # Get policy action
         with torch.inference_mode():
-            action = policy.select_action(observation)
-
-        # Convert to CPU / numpy.
-        action = action.to("cpu").numpy()
-        assert action.ndim == 2, "Action dimensions should be (batch, action_dim)"
-
-        # Apply the next action.
-        observation, reward, terminated, truncated, info = env.step(action)
-        if render_callback is not None:
-            render_callback(env)
-
-        # VectorEnv stores is_success in `info["final_info"][env_index]["is_success"]`. "final_info" isn't
-        # available of none of the envs finished.
-        if "final_info" in info:
-            successes = [info["is_success"] if info is not None else False for info in info["final_info"]]
-        else:
-            successes = [False] * env.num_envs
-
-        # Keep track of which environments are done so far.
-        done = terminated | truncated | done
-
-        all_actions.append(torch.from_numpy(action))
-        all_rewards.append(torch.from_numpy(reward))
-        all_dones.append(torch.from_numpy(done))
-        all_successes.append(torch.tensor(successes))
-
-        step += 1
-        running_success_rate = (
-            einops.reduce(torch.stack(all_successes, dim=1), "b n -> b", "any").numpy().mean()
-        )
-        progbar.set_postfix({"running_success_rate": f"{running_success_rate.item() * 100:.1f}%"})
-        progbar.update()
-
-    # Track the final observation.
-    if return_observations:
-        observation = preprocess_observation(observation)
-        all_observations.append(deepcopy(observation))
-
-    # Stack the sequence along the first dimension so that we have (batch, sequence, *) tensors.
-    ret = {
-        "action": torch.stack(all_actions, dim=1),
-        "reward": torch.stack(all_rewards, dim=1),
-        "success": torch.stack(all_successes, dim=1),
-        "done": torch.stack(all_dones, dim=1),
-    }
-    if return_observations:
-        stacked_observations = {}
-        for key in all_observations[0]:
-            stacked_observations[key] = torch.stack([obs[key] for obs in all_observations], dim=1)
-        ret["observation"] = stacked_observations
-
-    if hasattr(policy, "use_original_modules"):
-        policy.use_original_modules()
-
-    return ret
-
-
-def eval_policy(
-    env: gym.vector.VectorEnv,
-    policy: PreTrainedPolicy,
-    n_episodes: int,
-    max_episodes_rendered: int = 0,
-    videos_dir: Path | None = None,
-    return_episode_data: bool = False,
-    start_seed: int | None = None,
-) -> dict:
-    """
-    Args:
-        env: The batch of environments.
-        policy: The policy.
-        n_episodes: The number of episodes to evaluate.
-        max_episodes_rendered: Maximum number of episodes to render into videos.
-        videos_dir: Where to save rendered videos.
-        return_episode_data: Whether to return episode data for online training. Incorporates the data into
-            the "episodes" key of the returned dictionary.
-        start_seed: The first seed to use for the first individual rollout. For all subsequent rollouts the
-            seed is incremented by 1. If not provided, the environments are not manually seeded.
-    Returns:
-        Dictionary with metrics and data regarding the rollouts.
-    """
-    if max_episodes_rendered > 0 and not videos_dir:
-        raise ValueError("If max_episodes_rendered > 0, videos_dir must be provided.")
-
-    if not isinstance(policy, PreTrainedPolicy):
-        raise ValueError(
-            f"Policy of type 'PreTrainedPolicy' is expected, but type '{type(policy)}' was provided."
-        )
-
-    start = time.time()
-    policy.eval()
-
-    # Determine how many batched rollouts we need to get n_episodes. Note that if n_episodes is not evenly
-    # divisible by env.num_envs we end up discarding some data in the last batch.
-    n_batches = n_episodes // env.num_envs + int((n_episodes % env.num_envs) != 0)
-
-    # Keep track of some metrics.
-    sum_rewards = []
-    max_rewards = []
-    all_successes = []
-    all_seeds = []
-    threads = []  # for video saving threads
-    n_episodes_rendered = 0  # for saving the correct number of videos
-
-    # Callback for visualization.
-    def render_frame(env: gym.vector.VectorEnv):
-        # noqa: B023
-        if n_episodes_rendered >= max_episodes_rendered:
-            return
-        n_to_render_now = min(max_episodes_rendered - n_episodes_rendered, env.num_envs)
-        if isinstance(env, gym.vector.SyncVectorEnv):
-            ep_frames.append(np.stack([env.envs[i].render() for i in range(n_to_render_now)]))  # noqa: B023
-        elif isinstance(env, gym.vector.AsyncVectorEnv):
-            # Here we must render all frames and discard any we don't need.
-            ep_frames.append(np.stack(env.call("render")[:n_to_render_now]))
-
-    if max_episodes_rendered > 0:
-        video_paths: list[str] = []
-
-    if return_episode_data:
-        episode_data: dict | None = None
-
-    # we dont want progress bar when we use slurm, since it clutters the logs
-    progbar = trange(n_batches, desc="Stepping through eval batches", disable=inside_slurm())
-    for batch_ix in progbar:
-        # Cache frames for rendering videos. Each item will be (b, h, w, c), and the list indexes the rollout
-        # step.
-        if max_episodes_rendered > 0:
-            ep_frames: list[np.ndarray] = []
-
-        if start_seed is None:
-            seeds = None
-        else:
-            seeds = range(
-                start_seed + (batch_ix * env.num_envs), start_seed + ((batch_ix + 1) * env.num_envs)
-            )
-        rollout_data = rollout(
-            env,
-            policy,
-            seeds=list(seeds) if seeds else None,
-            return_observations=return_episode_data,
-            render_callback=render_frame if max_episodes_rendered > 0 else None,
-        )
-
-        # Figure out where in each rollout sequence the first done condition was encountered (results after
-        # this won't be included).
-        n_steps = rollout_data["done"].shape[1]
-        # Note: this relies on a property of argmax: that it returns the first occurrence as a tiebreaker.
-        done_indices = torch.argmax(rollout_data["done"].to(int), dim=1)
-
-        # Make a mask with shape (batch, n_steps) to mask out rollout data after the first done
-        # (batch-element-wise). Note the `done_indices + 1` to make sure to keep the data from the done step.
-        mask = (torch.arange(n_steps) <= einops.repeat(done_indices + 1, "b -> b s", s=n_steps)).int()
-        # Extend metrics.
-        batch_sum_rewards = einops.reduce((rollout_data["reward"] * mask), "b n -> b", "sum")
-        sum_rewards.extend(batch_sum_rewards.tolist())
-        batch_max_rewards = einops.reduce((rollout_data["reward"] * mask), "b n -> b", "max")
-        max_rewards.extend(batch_max_rewards.tolist())
-        batch_successes = einops.reduce((rollout_data["success"] * mask), "b n -> b", "any")
-        all_successes.extend(batch_successes.tolist())
-        if seeds:
-            all_seeds.extend(seeds)
-        else:
-            all_seeds.append(None)
-
-        # FIXME: episode_data is either None or it doesn't exist
-        if return_episode_data:
-            this_episode_data = _compile_episode_data(
-                rollout_data,
-                done_indices,
-                start_episode_index=batch_ix * env.num_envs,
-                start_data_index=(0 if episode_data is None else (episode_data["index"][-1].item() + 1)),
-                fps=env.unwrapped.metadata["render_fps"],
-            )
-            if episode_data is None:
-                episode_data = this_episode_data
+            action = policy.select_action(policy_observation)
+        
+        # Convert action to robot format
+        action_np = action.squeeze(0).cpu().numpy()
+        policy_actions.append(action_np.copy())
+        
+        # Convert action to robot action dict
+        robot_action = {}
+        action_names = robot.action_names  # Get joint names from robot
+        for i, name in enumerate(action_names):
+            if i < len(action_np):
+                robot_action[name] = action_np[i]
+        
+        # Apply action to robot
+        robot.send_action(robot_action)
+        
+        # Store data
+        robot_states.append(observation.copy())
+        timestamps.append(time.perf_counter() - episode_start_time)
+        
+        # Save frame for video if needed
+        if save_video:
+            if display_data and 'annotated_frame' in detection_result:
+                frames_for_video.append(detection_result['annotated_frame'].copy())
             else:
-                # Some sanity checks to make sure we are correctly compiling the data.
-                assert episode_data["episode_index"][-1] + 1 == this_episode_data["episode_index"][0]
-                assert episode_data["index"][-1] + 1 == this_episode_data["index"][0]
-                # Concatenate the episode data.
-                episode_data = {k: torch.cat([episode_data[k], this_episode_data[k]]) for k in episode_data}
-
-        # Maybe render video for visualization.
-        if max_episodes_rendered > 0 and len(ep_frames) > 0:
-            batch_stacked_frames = np.stack(ep_frames, axis=1)  # (b, t, *)
-            for stacked_frames, done_index in zip(
-                batch_stacked_frames, done_indices.flatten().tolist(), strict=False
-            ):
-                if n_episodes_rendered >= max_episodes_rendered:
-                    break
-
-                videos_dir.mkdir(parents=True, exist_ok=True)
-                video_path = videos_dir / f"eval_episode_{n_episodes_rendered}.mp4"
-                video_paths.append(str(video_path))
-                thread = threading.Thread(
-                    target=write_video,
-                    args=(
-                        str(video_path),
-                        stacked_frames[: done_index + 1],  # + 1 to capture the last observation
-                        env.unwrapped.metadata["render_fps"],
-                    ),
-                )
-                thread.start()
-                threads.append(thread)
-                n_episodes_rendered += 1
-
-        progbar.set_postfix(
-            {"running_success_rate": f"{np.mean(all_successes[:n_episodes]).item() * 100:.1f}%"}
-        )
-
-    # Wait till all video rendering threads are done.
-    for thread in threads:
-        thread.join()
-
-    # Compile eval info.
-    info = {
-        "per_episode": [
-            {
-                "episode_ix": i,
-                "sum_reward": sum_reward,
-                "max_reward": max_reward,
-                "success": success,
-                "seed": seed,
-            }
-            for i, (sum_reward, max_reward, success, seed) in enumerate(
-                zip(
-                    sum_rewards[:n_episodes],
-                    max_rewards[:n_episodes],
-                    all_successes[:n_episodes],
-                    all_seeds[:n_episodes],
-                    strict=True,
-                )
-            )
-        ],
-        "aggregated": {
-            "avg_sum_reward": float(np.nanmean(sum_rewards[:n_episodes])),
-            "avg_max_reward": float(np.nanmean(max_rewards[:n_episodes])),
-            "pc_success": float(np.nanmean(all_successes[:n_episodes]) * 100),
-            "eval_s": time.time() - start,
-            "eval_ep_s": (time.time() - start) / n_episodes,
-        },
+                frames_for_video.append(frame.copy())
+        
+        # Display frame if requested
+        if display_data and 'annotated_frame' in detection_result:
+            cv2.imshow('Handshake Evaluation', detection_result['annotated_frame'])
+            if cv2.waitKey(1) & 0xFF == 27:  # ESC key
+                break
+        
+        step += 1
+        
+        # Control loop timing (aim for ~30 FPS)
+        elapsed = time.perf_counter() - step_start_time
+        if elapsed < 1/30:
+            time.sleep(1/30 - elapsed)
+    
+    episode_end_time = time.perf_counter()
+    episode_duration = episode_end_time - episode_start_time
+    
+    # Analyze episode results
+    avg_confidence = np.mean(handshake_confidences) if handshake_confidences else 0.0
+    max_confidence = np.max(handshake_confidences) if handshake_confidences else 0.0
+    handshake_detected_frames = sum(1 for conf in handshake_confidences if conf > success_confidence_threshold)
+    handshake_detection_rate = handshake_detected_frames / len(handshake_confidences) if handshake_confidences else 0.0
+    
+    # Determine success - handshake completed successfully
+    success = (
+        avg_confidence > success_confidence_threshold * 0.7 and  # Average confidence reasonably high
+        max_confidence > success_confidence_threshold and        # Peak confidence high enough  
+        handshake_detection_rate > 0.3                          # Sustained detection over time
+    )
+    
+    # Save video if requested
+    video_path = None
+    if save_video and frames_for_video and output_dir:
+        output_dir.mkdir(parents=True, exist_ok=True)
+        video_path = output_dir / f"eval_episode_{episode_ix:03d}.mp4"
+        
+        # Convert frames to video
+        if frames_for_video:
+            height, width = frames_for_video[0].shape[:2]
+            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+            video_writer = cv2.VideoWriter(str(video_path), fourcc, 30.0, (width, height))
+            
+            for frame in frames_for_video:
+                video_writer.write(frame)
+            video_writer.release()
+    
+    episode_metrics = {
+        "episode_ix": episode_ix,
+        "success": success,
+        "duration_s": episode_duration,
+        "avg_handshake_confidence": avg_confidence,
+        "max_handshake_confidence": max_confidence,
+        "handshake_detection_rate": handshake_detection_rate,
+        "total_steps": step,
+        "avg_confidence": avg_confidence,
+        "video_path": str(video_path) if video_path else None,
     }
-
-    if return_episode_data:
-        info["episodes"] = episode_data
-
-    if max_episodes_rendered > 0:
-        info["video_paths"] = video_paths
-
-    return info
+    
+    log_say(f"Episode {episode_ix + 1} completed: {'SUCCESS' if success else 'FAILURE'} "
+            f"(avg_conf: {avg_confidence:.3f}, max_conf: {max_confidence:.3f})", True)
+    
+    return episode_metrics
 
 
-def _compile_episode_data(
-    rollout_data: dict, done_indices: Tensor, start_episode_index: int, start_data_index: int, fps: float
-) -> dict:
-    """Convenience function for `eval_policy(return_episode_data=True)`
-
-    Compiles all the rollout data into a Hugging Face dataset.
-
-    Similar logic is implemented when datasets are pushed to hub (see: `push_to_hub`).
+def eval_handshake_policy(
+    robot: Robot,
+    policy: PreTrainedPolicy, 
+    cfg: HandshakeEvalConfig,
+    output_dir: Path
+) -> dict[str, Any]:
     """
-    ep_dicts = []
-    total_frames = 0
-    for ep_ix in range(rollout_data["action"].shape[0]):
-        # + 2 to include the first done frame and the last observation frame.
-        num_frames = done_indices[ep_ix].item() + 2
-        total_frames += num_frames
-
-        # Here we do `num_frames - 1` as we don't want to include the last observation frame just yet.
-        ep_dict = {
-            "action": rollout_data["action"][ep_ix, : num_frames - 1],
-            "episode_index": torch.tensor([start_episode_index + ep_ix] * (num_frames - 1)),
-            "frame_index": torch.arange(0, num_frames - 1, 1),
-            "timestamp": torch.arange(0, num_frames - 1, 1) / fps,
-            "next.done": rollout_data["done"][ep_ix, : num_frames - 1],
-            "next.success": rollout_data["success"][ep_ix, : num_frames - 1],
-            "next.reward": rollout_data["reward"][ep_ix, : num_frames - 1].type(torch.float32),
-        }
-
-        # For the last observation frame, all other keys will just be copy padded.
-        for k in ep_dict:
-            ep_dict[k] = torch.cat([ep_dict[k], ep_dict[k][-1:]])
-
-        for key in rollout_data["observation"]:
-            ep_dict[key] = rollout_data["observation"][key][ep_ix, :num_frames]
-
-        ep_dicts.append(ep_dict)
-
-    data_dict = {}
-    for key in ep_dicts[0]:
-        data_dict[key] = torch.cat([x[key] for x in ep_dicts])
-
-    data_dict["index"] = torch.arange(start_data_index, start_data_index + total_frames, 1)
-
-    return data_dict
+    Evaluate a policy on handshake tasks.
+    
+    Returns:
+        Dictionary with evaluation results and metrics
+    """
+    log_say(f"Starting handshake evaluation with {cfg.n_episodes} episodes", True)
+    
+    # Initialize handshake detector
+    handshake_detector = ImprovedHandshakeDetector(
+        detection_confidence=0.7,
+        confidence_threshold=cfg.handshake_confidence_threshold
+    )
+    
+    # Get main camera name (assume first camera)
+    camera_names = list(robot.cameras.keys())
+    if not camera_names:
+        raise ValueError("Robot must have at least one camera configured for handshake evaluation")
+    main_camera_name = camera_names[0]
+    
+    log_say(f"Using camera '{main_camera_name}' for handshake detection", True)
+    
+    all_episodes = []
+    start_time = time.perf_counter()
+    
+    for episode_ix in range(cfg.n_episodes):
+        log_say(f"\n=== Episode {episode_ix + 1}/{cfg.n_episodes} ===", True)
+        
+        # Wait for handshake detection
+        detected, detection_confidence = wait_for_handshake_detection(
+            robot,
+            handshake_detector,
+            main_camera_name,
+            cfg.handshake_timeout_s,
+            cfg.handshake_confidence_threshold,
+            cfg.display_data
+        )
+        
+        if not detected:
+            log_say(f"Episode {episode_ix + 1}: No handshake detected within timeout", True)
+            episode_metrics = {
+                "episode_ix": episode_ix,
+                "success": False,
+                "duration_s": 0.0,
+                "avg_handshake_confidence": 0.0,
+                "max_handshake_confidence": detection_confidence,
+                "handshake_detection_rate": 0.0,
+                "total_steps": 0,
+                "timeout": True,
+                "video_path": None,
+            }
+        else:
+            # Run handshake episode
+            episode_metrics = evaluate_handshake_episode(
+                robot,
+                policy,
+                handshake_detector,
+                main_camera_name,
+                cfg.episode_time_s,
+                cfg.success_confidence_threshold,
+                cfg.display_data,
+                cfg.save_videos,
+                episode_ix,
+                output_dir / "videos" if cfg.save_videos else None
+            )
+            episode_metrics["timeout"] = False
+        
+        all_episodes.append(episode_metrics)
+        
+        # Reset period between episodes
+        if episode_ix < cfg.n_episodes - 1:  # Don't wait after last episode
+            log_say(f"Reset period: {cfg.reset_time_s}s before next episode", True)
+            time.sleep(cfg.reset_time_s)
+    
+    total_time = time.perf_counter() - start_time
+    
+    # Calculate aggregate metrics
+    successful_episodes = [ep for ep in all_episodes if ep["success"]]
+    detected_episodes = [ep for ep in all_episodes if not ep.get("timeout", False)]
+    
+    aggregated_metrics = {
+        "total_episodes": cfg.n_episodes,
+        "successful_episodes": len(successful_episodes),
+        "success_rate": len(successful_episodes) / cfg.n_episodes * 100,
+        "detection_rate": len(detected_episodes) / cfg.n_episodes * 100,
+        "avg_episode_duration": np.mean([ep["duration_s"] for ep in detected_episodes]) if detected_episodes else 0.0,
+        "avg_handshake_confidence": np.mean([ep["avg_handshake_confidence"] for ep in all_episodes]),
+        "avg_max_confidence": np.mean([ep["max_handshake_confidence"] for ep in all_episodes]),
+        "total_eval_time_s": total_time,
+        "avg_time_per_episode_s": total_time / cfg.n_episodes,
+    }
+    
+    results = {
+        "per_episode": all_episodes,
+        "aggregated": aggregated_metrics,
+        "config": asdict(cfg),
+    }
+    
+    # Clean up
+    if cfg.display_data:
+        cv2.destroyAllWindows()
+    
+    return results
 
 
 @parser.wrap()
-def eval_main(cfg: EvalPipelineConfig):
+def eval_handshake_main(cfg: HandshakeEvalPipelineConfig):
+    """Main function for handshake evaluation."""
+    init_logging()
+    logging.info("Starting handshake policy evaluation")
     logging.info(pformat(asdict(cfg)))
-
-    # Check device is available
-    device = get_safe_torch_device(cfg.policy.device, log=True)
-
-    torch.backends.cudnn.benchmark = True
-    torch.backends.cuda.matmul.allow_tf32 = True
-    set_seed(cfg.seed)
-
-    logging.info(colored("Output dir:", "yellow", attrs=["bold"]) + f" {cfg.output_dir}")
-
-    logging.info("Making environment.")
-    env = make_env(cfg.env, n_envs=cfg.eval.batch_size, use_async_envs=cfg.eval.use_async_envs)
-
-    logging.info("Making policy.")
-
-    policy = make_policy(
-        cfg=cfg.policy,
-        env_cfg=cfg.env,
-    )
-    policy.eval()
-
-    with torch.no_grad(), torch.autocast(device_type=device.type) if cfg.policy.use_amp else nullcontext():
-        info = eval_policy(
-            env,
-            policy,
-            cfg.eval.n_episodes,
-            max_episodes_rendered=10,
-            videos_dir=Path(cfg.output_dir) / "videos",
-            start_seed=cfg.seed,
-        )
-    print(info["aggregated"])
-
-    # Save info
-    with open(Path(cfg.output_dir) / "eval_info.json", "w") as f:
-        json.dump(info, f, indent=2)
-
-    env.close()
-
-    logging.info("End of eval")
+    
+    # Check device
+    device = get_safe_torch_device(cfg.device, log=True)
+    
+    # Create output directory
+    output_dir = Path(cfg.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    
+    logging.info(colored("Output dir:", "yellow", attrs=["bold"]) + f" {output_dir}")
+    
+    # Initialize robot
+    logging.info("Connecting to robot...")
+    robot = make_robot_from_config(cfg.robot)
+    robot.connect()
+    
+    try:
+        # Load policy
+        logging.info("Loading policy...")
+        policy = make_policy(cfg.policy)
+        policy.to(device)
+        policy.eval()
+        
+        # Run evaluation
+        logging.info("Starting evaluation...")
+        results = eval_handshake_policy(robot, policy, cfg.eval, output_dir)
+        
+        # Print results summary
+        print("\n" + "="*60)
+        print("HANDSHAKE EVALUATION RESULTS")
+        print("="*60)
+        agg = results["aggregated"]
+        print(f"Episodes: {agg['total_episodes']}")
+        print(f"Success Rate: {agg['success_rate']:.1f}%")
+        print(f"Detection Rate: {agg['detection_rate']:.1f}%")
+        print(f"Avg Handshake Confidence: {agg['avg_handshake_confidence']:.3f}")
+        print(f"Avg Episode Duration: {agg['avg_episode_duration']:.1f}s")
+        print(f"Total Evaluation Time: {agg['total_eval_time_s']:.1f}s")
+        print("="*60)
+        
+        # Save detailed results
+        results_file = output_dir / "eval_results.json"
+        with open(results_file, 'w') as f:
+            json.dump(results, f, indent=2, default=str)
+        
+        logging.info(f"Detailed results saved to {results_file}")
+        
+    finally:
+        # Disconnect robot
+        robot.disconnect()
+        logging.info("Robot disconnected")
+    
+    logging.info("Handshake evaluation completed!")
 
 
 if __name__ == "__main__":
-    init_logging()
-    eval_main()
+    eval_handshake_main()
