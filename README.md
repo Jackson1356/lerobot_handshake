@@ -89,7 +89,7 @@ This project extends LeRobot to enable SO-101 robots to:
 
 Clone this repository:
 ```bash
-git clone <your-repo-url>
+git clone https://github.com/Jackson1356/lerobot_handshake.git
 cd lerobot_handshake
 ```
 

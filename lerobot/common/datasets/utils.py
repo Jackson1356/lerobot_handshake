@@ -35,11 +35,7 @@ from huggingface_hub.errors import RevisionNotFoundError
 from PIL import Image as PILImage
 from torchvision import transforms
 
-from lerobot.common.datasets.backward_compatibility import (
-    V21_MESSAGE,
-    BackwardCompatibilityError,
-    ForwardCompatibilityError,
-)
+# Removed backward compatibility imports - not needed for handshake detection task
 from lerobot.common.robots import Robot
 from lerobot.common.utils.utils import is_valid_numpy_dtype_string
 from lerobot.configs.types import DictLike, FeatureType, PolicyFeature
@@ -298,9 +294,9 @@ def check_version_compatibility(
         else current_version
     )
     if v_check.major < v_current.major and enforce_breaking_major:
-        raise BackwardCompatibilityError(repo_id, v_check)
+        raise ValueError(f"Dataset {repo_id} version {v_check} is incompatible with current version {v_current}")
     elif v_check.minor < v_current.minor:
-        logging.warning(V21_MESSAGE.format(repo_id=repo_id, version=v_check))
+        logging.warning(f"Dataset {repo_id} version {v_check} is older than current version {v_current}")
 
 
 def get_repo_versions(repo_id: str) -> list[packaging.version.Version]:
@@ -353,11 +349,11 @@ def get_safe_version(repo_id: str, version: str | packaging.version.Version) -> 
 
     lower_major = [v for v in hub_versions if v.major < target_version.major]
     if lower_major:
-        raise BackwardCompatibilityError(repo_id, max(lower_major))
+        raise ValueError(f"Dataset {repo_id} version {max(lower_major)} is incompatible (too old)")
 
     upper_versions = [v for v in hub_versions if v > target_version]
     assert len(upper_versions) > 0
-    raise ForwardCompatibilityError(repo_id, min(upper_versions))
+    raise ValueError(f"Dataset {repo_id} version {min(upper_versions)} is incompatible (too new)")
 
 
 def get_hf_features_from_features(features: dict) -> datasets.Features:
