@@ -2,7 +2,7 @@
 
 <p align="center">
   <div style="display: flex; align-items: center; justify-content: center; gap: 20px;">
-    <img alt="LeRobot Handshake Logo" src="media/lerobot-logo-handshake.png" style="height: 200px; width: auto;">
+    <img alt="LeRobot Handshake Logo" src="media/lerobot-logo-handshake.png" style="height: 180px; width: auto;">
     <picture>
       <source media="(prefers-color-scheme: dark)" srcset="media/lerobot-logo-thumbnail.png">
       <source media="(prefers-color-scheme: light)" srcset="media/lerobot-logo-thumbnail.png">
@@ -168,6 +168,34 @@ python lerobot/record_handshake.py \
 - **⬅️ Left Arrow**: Re-record current episode (if something goes wrong)
 - **➡️ Right Arrow**: End episode early and move to reset phase
 - **⎋ Escape**: Stop entire recording session
+
+---
+
+## 🎮 Manual Teleoperation
+
+Practice controlling your robot before recording datasets.
+
+### Without Camera
+```bash
+python -m lerobot.teleoperate \
+    --robot.type=so101_follower \
+    --robot.port=/dev/ttyACM0 \
+    --teleop.type=so101_leader \
+    --teleop.port=/dev/ttyACM1
+```
+
+### With Camera
+```bash
+python -m lerobot.teleoperate \
+    --robot.type=so101_follower \
+    --robot.port=/dev/ttyACM0 \
+    --robot.cameras="{ front: {type: opencv, index_or_path: 0, width: 640, height: 480, fps: 30}}" \
+    --teleop.type=so101_leader \
+    --teleop.port=/dev/ttyACM1 \
+    --display_data=true
+```
+
+**Tips**: Start without camera first, practice smooth movements, always supervise the robot.
 
 ---
 
