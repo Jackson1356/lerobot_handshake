@@ -114,7 +114,7 @@ pip install -e .
 2. **Connect your camera** and note its device index (usually 0)
 3. **Find robot ports**:
    ```bash
-   python lerobot/find_port.py
+   python -m lerobot.find_port
    ```
 4. **Test camera connection**:
 ```bash
@@ -203,7 +203,7 @@ python -m lerobot.teleoperate \
 Use the specialized `record_handshake.py` script to collect demonstration data:
 
 ```bash
-python lerobot/record_handshake.py \
+python -m lerobot.record_handshake \
     --robot.type=so101_follower \
     --robot.port=/dev/ttyACM1 \
     --robot.cameras='{"front": {"type": "opencv", "index_or_path": 0, "width": 640, "height": 480, "fps": 30}}' \
@@ -236,7 +236,7 @@ python lerobot/record_handshake.py \
 Before training your policy, it's recommended to visualize your recorded dataset to verify data quality and understand the handshake patterns. Use the HTML visualization tool to create an interactive web page:
 
 ```bash
-python lerobot/scripts/visualize_dataset_html.py \
+python -m lerobot.scripts.visualize_dataset_html \
     --dataset.repo_id=your-username/handshake_dataset \
     --output-dir=./dataset_visualization
 ```
@@ -253,7 +253,7 @@ This will generate an HTML page with:
 For more detailed analysis, you can also use the standard dataset visualization:
 
 ```bash
-python lerobot/scripts/visualize_dataset.py \
+python -m lerobot.scripts.visualize_dataset \
     --dataset.repo_id=your-username/handshake_dataset \
     --episode-index=0 \
     --save-video
@@ -273,7 +273,7 @@ python lerobot/scripts/visualize_dataset.py \
 Train your robot using the specialized training script:
 
 ```bash
-python lerobot/scripts/train_handshake.py \
+python -m lerobot.scripts.train_handshake \
     --dataset.repo_id=your-username/handshake_dataset \
     --policy.type=act \
     --policy.n_obs_steps=1 \
@@ -298,7 +298,7 @@ The training script includes handshake-specific metrics:
 Deploy your trained handshake policy:
 
 ```bash
-python lerobot/scripts/eval.py \
+python -m lerobot.scripts.eval \
     --policy.name=handshake_policy_v1 \
     --robot.type=so101_follower \
     --robot.port=/dev/ttyACM0 \
@@ -376,7 +376,7 @@ python pose_detection/simple_camera_test.py
 **Robot connection issues:**
 ```bash
 # Find robot ports
-python lerobot/find_port.py
+python -m lerobot.find_port
 
 # Test robot connection
 python lerobot/scripts/control_robot.py connect --robot.type=so101_follower --robot.port=YOUR_PORT
