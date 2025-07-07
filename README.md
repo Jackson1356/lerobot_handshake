@@ -1,4 +1,4 @@
-# 🤝 LeRobot Handshake Detection Project
+# 🤝 LeRobot SO-101 Handshake Project
 
 <p align="center">
   <div style="display: flex; align-items: center; justify-content: center; gap: 20px;">
@@ -22,7 +22,7 @@
 </div>
 
 <h2 align="center">
-    <p>🤖 Teaching SO-101 Robots to Shake Hands with Humans 🤝</p>
+    <p>🤖 Teaching SO-101 Robot Arms to Shake Hands with Humans 🤝</p>
 </h2>
 
 <div align="center">
@@ -170,8 +170,10 @@ Practice controlling your robot before recording datasets.
 python -m lerobot.teleoperate \
     --robot.type=so101_follower \
     --robot.port=/dev/ttyACM1 \
+    --robot.id=my_follower_arm \
     --teleop.type=so101_leader \
-    --teleop.port=/dev/ttyACM0
+    --teleop.port=/dev/ttyACM0 \
+    --teleop.id=my_leader_arm
 ```
 
 2. With Camera
@@ -179,9 +181,11 @@ python -m lerobot.teleoperate \
 python -m lerobot.teleoperate \
     --robot.type=so101_follower \
     --robot.port=/dev/ttyACM1 \
+    --robot.id=my_follower_arm \ 
     --robot.cameras="{ front: {type: opencv, index_or_path: 0, width: 640, height: 480, fps: 30}}" \
     --teleop.type=so101_leader \
     --teleop.port=/dev/ttyACM0 \
+    --teleop.id=my_leader_arm \
     --display_data=true
 ```
 
