@@ -269,10 +269,13 @@ def record_test_handshake_episode(
             logging.info(f"DEBUG: Episode observation keys: {list(observation.keys())}")
 
         # Always add handshake detection data to observation (with defaults if detection fails)
-        observation["handshake_ready"] = 0
+        observation["handshake_ready"] = 0.0  # Use float for consistency
         observation["handshake_confidence"] = 0.0
         observation["hand_position_x"] = -1.0
         observation["hand_position_y"] = -1.0
+        
+        if debug_mode:
+            logging.info(f"DEBUG: Added default handshake data to observation")
         
         # Try to add real handshake detection if camera is available
         if main_camera_name in observation:
@@ -281,7 +284,7 @@ def record_test_handshake_episode(
                 handshake_result = handshake_detector.detect_handshake_gesture(frame, visualize=False)
                 
                 # Update with real handshake detection data
-                observation["handshake_ready"] = int(handshake_result['ready'])
+                observation["handshake_ready"] = float(handshake_result['ready'])
                 observation["handshake_confidence"] = handshake_result['confidence']
                 if handshake_result['hand_position'] is not None:
                     observation["hand_position_x"] = float(handshake_result['hand_position'][0])
@@ -300,6 +303,19 @@ def record_test_handshake_episode(
                 logging.warning(f"DEBUG: Camera '{main_camera_name}' not found in observation, using default handshake values")
 
         if policy is not None or dataset is not None:
+            if debug_mode:
+                logging.info("=== DEBUG: Before build_dataset_frame ===")
+                logging.info(f"Observation keys: {list(observation.keys())}")
+                observation_features = {k: v for k, v in dataset.features.items() if k.startswith("observation.")}
+                logging.info(f"Expected observation features: {list(observation_features.keys())}")
+                for feature_key, feature_def in observation_features.items():
+                    if feature_def.get("names"):
+                        for name in feature_def["names"]:
+                            if name in observation:
+                                logging.info(f"✅ Found {name} in observation: {observation[name]}")
+                            else:
+                                logging.error(f"❌ Missing {name} in observation (needed for {feature_key})")
+            
             observation_frame = build_dataset_frame(dataset.features, observation, prefix="observation")
 
         if policy is not None:
@@ -389,10 +405,10 @@ def test_record_handshake(cfg: TestHandshakeRecordConfig) -> LeRobotDataset:
     action_features = hw_to_dataset_features(robot.action_features, "action", cfg.dataset.video)
     obs_features = hw_to_dataset_features(robot.observation_features, "observation", cfg.dataset.video)
     
-    # Add handshake detection features
+    # Add handshake detection features (all float32 to match build_dataset_frame requirements)
     handshake_features = {
         "observation.handshake_ready": {
-            "dtype": "int64",
+            "dtype": "float32",
             "shape": (1,),
             "names": ["handshake_ready"],
         },
