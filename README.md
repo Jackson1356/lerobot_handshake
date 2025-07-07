@@ -1,11 +1,14 @@
 # 🤝 LeRobot Handshake Detection Project
 
 <p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="media/lerobot-logo-thumbnail.png">
-    <source media="(prefers-color-scheme: light)" srcset="media/lerobot-logo-thumbnail.png">
-    <img alt="LeRobot Handshake Detection" src="media/lerobot-logo-thumbnail.png" style="max-width: 100%;">
-  </picture>
+  <div style="display: flex; align-items: center; justify-content: center; gap: 20px;">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="media/lerobot-logo-thumbnail.png">
+      <source media="(prefers-color-scheme: light)" srcset="media/lerobot-logo-thumbnail.png">
+      <img alt="LeRobot Handshake Detection" src="media/lerobot-logo-thumbnail.png" style="max-width: 100%;">
+    </picture>
+    <img alt="LeRobot Handshake Logo" src="media/lerobot-logo-handshake.png" style="width: 80px; height: 80px;">
+  </div>
   <br/>
   <br/>
 </p>
