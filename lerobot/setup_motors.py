@@ -30,17 +30,12 @@ import draccus
 
 from .common.robots import (  # noqa: F401
     RobotConfig,
-    koch_follower,
-    lekiwi,
     make_robot_from_config,
-    so100_follower,
     so101_follower,
 )
 from .common.teleoperators import (  # noqa: F401
     TeleoperatorConfig,
-    koch_leader,
     make_teleoperator_from_config,
-    so100_leader,
     so101_leader,
 )
 
