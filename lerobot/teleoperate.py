@@ -20,10 +20,22 @@ Example:
 ```shell
 python -m lerobot.teleoperate \
     --robot.type=so101_follower \
-    --robot.port=/dev/ttyACM0 \
-    --robot.cameras="{ front: {type: opencv, index_or_path: 0, width: 1920, height: 1080, fps: 30}}" \
+    --robot.port=/dev/ttyACM1 \
+    --robot.id=my_follower_arm \
     --teleop.type=so101_leader \
-    --teleop.port=/dev/ttyACM1 \
+    --teleop.port=/dev/ttyACM0 \
+    --teleop.id=my_leader_arm
+```
+
+```shell
+python -m lerobot.teleoperate \
+    --robot.type=so101_follower \
+    --robot.port=/dev/ttyACM1 \
+    --robot.id=my_follower_arm \
+    --robot.cameras='{"front": {"type": "opencv", "index_or_path": 0, "width": 640, "height": 480, "fps": 30}}' \
+    --teleop.type=so101_leader \
+    --teleop.port=/dev/ttyACM0 \
+    --teleop.id=my_leader_arm \
     --display_data=true
 ```
 """
@@ -53,6 +65,7 @@ from .common.teleoperators import (
 from .common.utils.robot_utils import busy_wait
 from .common.utils.utils import init_logging, move_cursor_up
 from .common.utils.visualization_utils import _init_rerun
+from .configs import parser
 
 from .common.teleoperators import keyboard, so101_leader  # noqa: F401
 
@@ -105,7 +118,7 @@ def teleop_loop(
         move_cursor_up(len(action) + 5)
 
 
-@draccus.wrap()
+@parser.wrap()
 def teleoperate(cfg: TeleoperateConfig):
     init_logging()
     logging.info(pformat(asdict(cfg)))
