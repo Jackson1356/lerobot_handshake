@@ -54,9 +54,12 @@ from lerobot.configs.policies import PreTrainedConfig
 
 
 def _init_rerun(session_name: str = "data_collection"):
+    import os
+    batch_size = os.getenv("RERUN_FLUSH_NUM_BYTES", "8000")
+    os.environ["RERUN_FLUSH_NUM_BYTES"] = batch_size
     rr.init(session_name)
-    rr.connect("0.0.0.0:9876")
-    rr.log("./", rr.ViewCoordinates.RIGHT_HAND_Y_DOWN, static=True)
+    memory_limit = os.getenv("LEROBOT_RERUN_MEMORY_LIMIT", "10%")
+    rr.spawn(memory_limit=memory_limit)
 
 
 @dataclass
