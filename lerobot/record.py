@@ -278,9 +278,9 @@ def record(cfg: RecordConfig) -> LeRobotDataset:
     # Load pretrained policy
     policy = None if cfg.policy is None else make_policy(cfg.policy, ds_meta=dataset.meta)
 
-    robot.connect(calibrate=False)
+    robot.connect()
     if teleop is not None:
-        teleop.connect(calibrate=False)
+        teleop.connect()
 
     listener, events = init_keyboard_listener()
 

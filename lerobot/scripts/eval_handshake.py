@@ -203,7 +203,7 @@ def evaluate_handshake_episode(
     policy.reset()
     
     log_say(f"Starting handshake episode {episode_ix + 1}...", True)
-    
+
     step = 0
     max_steps = int(episode_time_s * 30)  # Assume ~30 FPS
     
@@ -273,7 +273,7 @@ def evaluate_handshake_episode(
         if save_video:
             if display_data and 'annotated_frame' in detection_result:
                 frames_for_video.append(detection_result['annotated_frame'].copy())
-            else:
+        else:
                 frames_for_video.append(frame.copy())
         
         # Display frame if requested
@@ -281,7 +281,7 @@ def evaluate_handshake_episode(
             cv2.imshow('Handshake Evaluation', detection_result['annotated_frame'])
             if cv2.waitKey(1) & 0xFF == 27:  # ESC key
                 break
-        
+
         step += 1
         
         # Control loop timing (aim for ~30 FPS)
@@ -341,7 +341,7 @@ def evaluate_handshake_episode(
 
 def eval_handshake_policy(
     robot: Robot,
-    policy: PreTrainedPolicy, 
+    policy: PreTrainedPolicy,
     cfg: HandshakeEvalConfig,
     output_dir: Path
 ) -> dict[str, Any]:
@@ -456,7 +456,7 @@ def eval_handshake_main(cfg: HandshakeEvalPipelineConfig):
     init_logging()
     logging.info("Starting handshake policy evaluation")
     logging.info(pformat(asdict(cfg)))
-    
+
     # Check device
     device = get_safe_torch_device(cfg.device, log=True)
     
@@ -469,7 +469,7 @@ def eval_handshake_main(cfg: HandshakeEvalPipelineConfig):
     # Initialize robot
     logging.info("Connecting to robot...")
     robot = make_robot_from_config(cfg.robot)
-    robot.connect(calibrate=False)
+    robot.connect()
     
     try:
         # Load policy
@@ -477,7 +477,7 @@ def eval_handshake_main(cfg: HandshakeEvalPipelineConfig):
         policy = make_policy(cfg.policy)
         policy.to(device)
         policy.eval()
-        
+
         # Run evaluation
         logging.info("Starting evaluation...")
         results = eval_handshake_policy(robot, policy, cfg.eval, output_dir)
