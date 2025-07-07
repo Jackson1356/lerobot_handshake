@@ -184,38 +184,65 @@ def wait_for_handshake_detection(
     
     log_say("Waiting for person to extend their hand for handshake...", True)
     
+    iteration = 0
     while time.perf_counter() - start_time < timeout_s:
-        observation = robot.get_observation()
+        iteration += 1
         
-        if camera_name not in observation:
-            logging.warning(f"Camera '{camera_name}' not found in observation. Available cameras: {list(observation.keys())}")
+        try:
+            observation = robot.get_observation()
+            
+            # Debug: Log every 30 iterations (~3 seconds)
+            if iteration % 30 == 1:
+                elapsed = time.perf_counter() - start_time
+                logging.info(f"Handshake detection iteration {iteration}: elapsed {elapsed:.1f}s/{timeout_s}s")
+                logging.info(f"Available observation keys: {list(observation.keys())}")
+                logging.info(f"Looking for camera: '{camera_name}'")
+            
+            if camera_name not in observation:
+                if iteration == 1:  # Only log this once
+                    logging.warning(f"Camera '{camera_name}' not found in observation. Available cameras: {list(observation.keys())}")
+                    # Try to find camera with different names
+                    image_keys = [key for key in observation.keys() if isinstance(observation[key], np.ndarray) and len(observation[key].shape) == 3]
+                    if image_keys:
+                        logging.info(f"Found image keys: {image_keys}, trying first one: {image_keys[0]}")
+                        camera_name = image_keys[0]
+                    else:
+                        logging.error("No camera data found in observation!")
+                continue
+                
+            frame = observation[camera_name]
+            
+            # Detect handshake gesture
+            detection_result = handshake_detector.detect_handshake_gesture(frame, visualize=True)
+            
+            if detection_result['ready'] and detection_result['confidence'] >= confidence_threshold:
+                if detection_start_time is None:
+                    detection_start_time = time.perf_counter()
+                    log_say(f"Handshake detected! Waiting {detection_delay} seconds before starting recording...", True)
+                
+                # Wait for the specified delay after detection
+                if time.perf_counter() - detection_start_time >= detection_delay:
+                    log_say("Starting handshake recording now!", True)
+                    return True
+            else:
+                # Reset detection timer if gesture is lost
+                detection_start_time = None
+            
+            # Display annotated frame if requested
+            if display_data and 'annotated_frame' in detection_result:
+                cv2.imshow('Handshake Detection', detection_result['annotated_frame'])
+                if cv2.waitKey(1) & 0xFF == ord('q'):
+                    break
+            
+            time.sleep(0.1)  # Small delay to prevent excessive CPU usage
+            
+        except KeyboardInterrupt:
+            logging.info("KeyboardInterrupt received in handshake detection")
+            break
+        except Exception as e:
+            logging.error(f"Error in handshake detection loop: {e}")
+            time.sleep(0.1)
             continue
-            
-        frame = observation[camera_name]
-        
-        # Detect handshake gesture
-        detection_result = handshake_detector.detect_handshake_gesture(frame, visualize=True)
-        
-        if detection_result['ready'] and detection_result['confidence'] >= confidence_threshold:
-            if detection_start_time is None:
-                detection_start_time = time.perf_counter()
-                log_say(f"Handshake detected! Waiting {detection_delay} seconds before starting recording...", True)
-            
-            # Wait for the specified delay after detection
-            if time.perf_counter() - detection_start_time >= detection_delay:
-                log_say("Starting handshake recording now!", True)
-                return True
-        else:
-            # Reset detection timer if gesture is lost
-            detection_start_time = None
-        
-        # Display annotated frame if requested
-        if display_data and 'annotated_frame' in detection_result:
-            cv2.imshow('Handshake Detection', detection_result['annotated_frame'])
-            if cv2.waitKey(1) & 0xFF == ord('q'):
-                break
-        
-        time.sleep(0.1)  # Small delay to prevent excessive CPU usage
     
     log_say("Handshake detection timeout. Skipping this episode.", True)
     return False

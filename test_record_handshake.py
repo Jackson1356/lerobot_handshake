@@ -1,14 +1,31 @@
 #!/usr/bin/env python
 
-# Test version of record_handshake.py with debugging features
+# Copyright 2025 The HuggingFace Inc. team. All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""
+Test version of handshake recording with debugging capabilities.
+"""
 
 import logging
 import time
+import traceback
+import cv2
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from pprint import pformat
 
-import cv2
 import numpy as np
 import rerun as rr
 
@@ -20,7 +37,6 @@ from lerobot.common.cameras.realsense.configuration_realsense import RealSenseCa
 from lerobot.common.datasets.image_writer import safe_stop_image_writer
 from lerobot.common.datasets.lerobot_dataset import LeRobotDataset
 from lerobot.common.datasets.utils import build_dataset_frame, hw_to_dataset_features
-from lerobot.common.handshake_detection import ImprovedHandshakeDetector
 from lerobot.common.policies.factory import make_policy
 from lerobot.common.policies.pretrained import PreTrainedPolicy
 from lerobot.common.robots import (  # noqa: F401
@@ -52,18 +68,16 @@ from lerobot.common.utils.visualization_utils import _init_rerun
 from lerobot.configs import parser
 from lerobot.configs.policies import PreTrainedConfig
 
-
-def _init_rerun(session_name: str = "data_collection"):
-    import os
-    batch_size = os.getenv("RERUN_FLUSH_NUM_BYTES", "8000")
-    os.environ["RERUN_FLUSH_NUM_BYTES"] = batch_size
-    rr.init(session_name)
-    memory_limit = os.getenv("LEROBOT_RERUN_MEMORY_LIMIT", "10%")
-    rr.spawn(memory_limit=memory_limit)
+# Import handshake detection
+try:
+    from lerobot.common.handshake_detection import ImprovedHandshakeDetector
+except ImportError as e:
+    logging.error(f"Failed to import handshake detection: {e}")
+    ImprovedHandshakeDetector = None
 
 
 @dataclass
-class TestHandshakeDatasetRecordConfig:
+class HandshakeDatasetRecordConfig:
     # Dataset identifier. By convention it should match '{hf_username}/{dataset_name}' (e.g. `lerobot/handshake_data`).
     repo_id: str
     # A short but accurate description of the handshake task (e.g. "Shake hands with person when they extend their hand.")
@@ -99,8 +113,8 @@ class TestHandshakeDatasetRecordConfig:
     handshake_timeout_s: float = 30.0
     # Skip handshake detection and start recording immediately (for debugging)
     skip_handshake_detection: bool = False
-    # Enable verbose debugging
-    debug_mode: bool = True
+    # Enable verbose debugging output
+    debug_mode: bool = False
 
     def __post_init__(self):
         if self.single_task is None:
@@ -108,9 +122,9 @@ class TestHandshakeDatasetRecordConfig:
 
 
 @dataclass
-class TestHandshakeRecordConfig:
+class HandshakeRecordConfig:
     robot: RobotConfig
-    dataset: TestHandshakeDatasetRecordConfig
+    dataset: HandshakeDatasetRecordConfig
     # Whether to control the robot with a teleoperator
     teleop: TeleoperatorConfig | None = None
     # Whether to control the robot with a policy
@@ -139,71 +153,149 @@ class TestHandshakeRecordConfig:
         return ["policy"]
 
 
-def wait_for_handshake_detection_debug(
-    robot,
-    handshake_detector,
+def test_robot_connection(robot: Robot, debug_mode: bool = False):
+    """Test robot connection and camera access"""
+    print("\n=== TESTING ROBOT CONNECTION ===")
+    
+    try:
+        print(f"Robot connected: {robot.is_connected}")
+        print(f"Robot type: {robot.name}")
+        print(f"Robot ID: {robot.id}")
+        
+        if hasattr(robot, 'cameras'):
+            print(f"Number of cameras: {len(robot.cameras)}")
+            for cam_name, cam in robot.cameras.items():
+                print(f"  Camera '{cam_name}': connected={cam.is_connected}")
+        
+        print("\n=== TESTING OBSERVATION ===")
+        observation = robot.get_observation()
+        print(f"Observation keys: {list(observation.keys())}")
+        
+        for key, value in observation.items():
+            if isinstance(value, np.ndarray):
+                print(f"  {key}: shape={value.shape}, dtype={value.dtype}")
+            else:
+                print(f"  {key}: {type(value)} = {value}")
+        
+        return observation
+        
+    except Exception as e:
+        print(f"ERROR testing robot: {e}")
+        if debug_mode:
+            traceback.print_exc()
+        return None
+
+
+def test_handshake_detection(observation: dict, debug_mode: bool = False):
+    """Test handshake detection on current observation"""
+    print("\n=== TESTING HANDSHAKE DETECTION ===")
+    
+    if ImprovedHandshakeDetector is None:
+        print("ERROR: Handshake detector not available")
+        return None
+    
+    try:
+        detector = ImprovedHandshakeDetector(confidence_threshold=0.5)
+        print("Handshake detector initialized successfully")
+        
+        # Find camera data
+        camera_keys = [key for key, val in observation.items() if isinstance(val, np.ndarray) and len(val.shape) == 3]
+        print(f"Found camera keys: {camera_keys}")
+        
+        if not camera_keys:
+            print("ERROR: No camera data found in observation")
+            return None
+        
+        # Test detection on first camera
+        camera_key = camera_keys[0]
+        frame = observation[camera_key]
+        print(f"Testing detection on camera '{camera_key}' with frame shape: {frame.shape}")
+        
+        result = detector.detect_handshake_gesture(frame, visualize=True)
+        print(f"Detection result: {result}")
+        
+        if 'annotated_frame' in result and debug_mode:
+            cv2.imshow('Test Handshake Detection', result['annotated_frame'])
+            print("Press any key to continue...")
+            cv2.waitKey(0)
+            cv2.destroyAllWindows()
+        
+        return result
+        
+    except Exception as e:
+        print(f"ERROR testing handshake detection: {e}")
+        if debug_mode:
+            traceback.print_exc()
+        return None
+
+
+def wait_for_handshake_detection_test(
+    robot: Robot,
+    handshake_detector: ImprovedHandshakeDetector,
     camera_name: str,
     timeout_s: float,
     confidence_threshold: float,
     detection_delay: float,
+    debug_mode: bool = False,
     display_data: bool = False,
-    debug_mode: bool = True,
 ) -> bool:
     """
-    Wait for handshake detection from the person with debugging.
-    
-    Returns:
-        True if handshake detected, False if timeout
+    Test version of wait_for_handshake_detection with more debugging.
     """
+    print(f"\n=== WAITING FOR HANDSHAKE DETECTION ===")
+    print(f"Camera: {camera_name}")
+    print(f"Timeout: {timeout_s}s")
+    print(f"Confidence threshold: {confidence_threshold}")
+    print(f"Detection delay: {detection_delay}s")
+    
     start_time = time.perf_counter()
     detection_start_time = None
+    iteration_count = 0
     
     log_say("Waiting for person to extend their hand for handshake...", True)
     
     while time.perf_counter() - start_time < timeout_s:
-        observation = robot.get_observation()
+        iteration_count += 1
         
-        # Debug: Print available keys in observation
-        if debug_mode:
-            logging.info(f"DEBUG: Available observation keys: {list(observation.keys())}")
-            logging.info(f"DEBUG: Looking for camera: '{camera_name}'")
-            
-            # Print types and shapes of observation values
-            for key, value in observation.items():
-                if hasattr(value, 'shape'):
-                    logging.info(f"DEBUG: {key}: {type(value)} shape={value.shape}")
-                else:
-                    logging.info(f"DEBUG: {key}: {type(value)} value={value}")
-        
-        if camera_name not in observation:
-            logging.warning(f"Camera '{camera_name}' not found in observation. Available cameras: {list(observation.keys())}")
-            # Try to find camera with 'images' prefix or any image-like data
-            image_keys = [key for key in observation.keys() if 'image' in key.lower() or isinstance(observation[key], np.ndarray) and len(observation[key].shape) == 3]
-            if image_keys:
-                logging.info(f"Found potential image keys: {image_keys}, trying first one...")
-                camera_name = image_keys[0]
-                logging.info(f"Using camera key: '{camera_name}'")
-            else:
-                time.sleep(0.5)  # Wait a bit before retrying
-                continue
-            
-        frame = observation[camera_name]
-        
-        # Debug frame info
-        if debug_mode:
-            logging.info(f"DEBUG: Frame type: {type(frame)}, shape: {frame.shape if hasattr(frame, 'shape') else 'no shape'}")
-        
-        # Detect handshake gesture
         try:
+            observation = robot.get_observation()
+            
+            if debug_mode and iteration_count % 30 == 1:  # Log every 30 iterations (~3 seconds)
+                print(f"Iteration {iteration_count}: Available keys: {list(observation.keys())}")
+                elapsed = time.perf_counter() - start_time
+                print(f"Elapsed time: {elapsed:.1f}s / {timeout_s}s")
+            
+            if camera_name not in observation:
+                if iteration_count == 1:  # Only log this once
+                    print(f"WARNING: Camera '{camera_name}' not found in observation.")
+                    print(f"Available keys: {list(observation.keys())}")
+                    # Try to find camera with different names
+                    image_keys = [key for key in observation.keys() if isinstance(observation[key], np.ndarray) and len(observation[key].shape) == 3]
+                    if image_keys:
+                        print(f"Found image keys: {image_keys}, using first one: {image_keys[0]}")
+                        camera_name = image_keys[0]
+                    else:
+                        print("ERROR: No camera data found!")
+                        continue
+                else:
+                    continue
+                    
+            frame = observation[camera_name]
+            
+            if debug_mode and iteration_count == 1:
+                print(f"Frame shape: {frame.shape}, dtype: {frame.dtype}")
+            
+            # Detect handshake gesture
             detection_result = handshake_detector.detect_handshake_gesture(frame, visualize=True)
             
-            if debug_mode:
-                logging.info(f"DEBUG: Detection result: ready={detection_result['ready']}, confidence={detection_result['confidence']:.3f}")
+            if debug_mode and iteration_count % 30 == 1:
+                print(f"Detection result: ready={detection_result['ready']}, confidence={detection_result['confidence']:.3f}")
             
             if detection_result['ready'] and detection_result['confidence'] >= confidence_threshold:
                 if detection_start_time is None:
                     detection_start_time = time.perf_counter()
                     log_say(f"Handshake detected! Waiting {detection_delay} seconds before starting recording...", True)
+                    print(f"Detection confidence: {detection_result['confidence']:.3f}")
                 
                 # Wait for the specified delay after detection
                 if time.perf_counter() - detection_start_time >= detection_delay:
@@ -211,41 +303,57 @@ def wait_for_handshake_detection_debug(
                     return True
             else:
                 # Reset detection timer if gesture is lost
+                if detection_start_time is not None and debug_mode:
+                    print("Handshake gesture lost, resetting detection timer")
                 detection_start_time = None
             
             # Display annotated frame if requested
             if display_data and 'annotated_frame' in detection_result:
-                cv2.imshow('Handshake Detection', detection_result['annotated_frame'])
-                if cv2.waitKey(1) & 0xFF == ord('q'):
+                cv2.imshow('Handshake Detection Test', detection_result['annotated_frame'])
+                key = cv2.waitKey(1) & 0xFF
+                if key == ord('q'):
+                    print("User requested quit")
                     break
-                    
+                elif key == ord('s'):
+                    print("User requested skip detection")
+                    return True
+            
+            time.sleep(0.1)  # Small delay to prevent excessive CPU usage
+            
+        except KeyboardInterrupt:
+            print("KeyboardInterrupt received!")
+            return False
         except Exception as e:
-            logging.error(f"Error in handshake detection: {e}")
+            print(f"ERROR in handshake detection loop: {e}")
             if debug_mode:
-                import traceback
-                logging.error(f"Full traceback: {traceback.format_exc()}")
-        
-        time.sleep(0.1)  # Small delay to prevent excessive CPU usage
+                traceback.print_exc()
+            time.sleep(0.1)
     
     log_say("Handshake detection timeout. Skipping this episode.", True)
     return False
 
 
 @safe_stop_image_writer
-def record_test_handshake_episode(
-    robot,
+def record_handshake_loop_test(
+    robot: Robot,
     events: dict,
     fps: int,
-    handshake_detector,
+    handshake_detector: ImprovedHandshakeDetector | None,
     main_camera_name: str,
-    dataset=None,
-    teleop=None,
-    policy=None,
+    dataset: LeRobotDataset | None = None,
+    teleop: Teleoperator | None = None,
+    policy: PreTrainedPolicy | None = None,
     control_time_s: int | None = None,
     single_task: str | None = None,
     display_data: bool = False,
-    debug_mode: bool = True,
+    debug_mode: bool = False,
 ):
+    """Test version of record loop with debugging"""
+    print(f"\n=== STARTING RECORD LOOP ===")
+    print(f"Control time: {control_time_s}s")
+    print(f"FPS: {fps}")
+    print(f"Main camera: {main_camera_name}")
+    
     if dataset is not None and dataset.fps != fps:
         raise ValueError(f"The dataset fps should be equal to requested fps ({dataset.fps} != {fps}).")
 
@@ -255,202 +363,176 @@ def record_test_handshake_episode(
 
     timestamp = 0
     start_episode_t = time.perf_counter()
+    frame_count = 0
     
     while timestamp < control_time_s:
         start_loop_t = time.perf_counter()
+        frame_count += 1
 
         if events["exit_early"]:
+            print("Exit early requested")
             events["exit_early"] = False
             break
 
-        observation = robot.get_observation()
-        
-        if debug_mode:
-            logging.info(f"DEBUG: Episode observation keys: {list(observation.keys())}")
+        try:
+            observation = robot.get_observation()
+            
+            if debug_mode and frame_count % 60 == 1:  # Log every 60 frames (~2 seconds)
+                print(f"Frame {frame_count}: timestamp={timestamp:.1f}s/{control_time_s}s")
 
-        # Always add handshake detection data to observation (with defaults if detection fails)
-        observation["handshake_ready"] = 0.0  # Use float for consistency
-        observation["handshake_confidence"] = 0.0
-        observation["hand_position_x"] = -1.0
-        observation["hand_position_y"] = -1.0
-        
-        if debug_mode:
-            logging.info(f"DEBUG: Added default handshake data to observation")
-        
-        # Try to add real handshake detection if camera is available
-        if main_camera_name in observation:
-            frame = observation[main_camera_name]
-            try:
+            # Add handshake detection to observation if detector available
+            if handshake_detector and main_camera_name in observation:
+                frame = observation[main_camera_name]
                 handshake_result = handshake_detector.detect_handshake_gesture(frame, visualize=False)
                 
-                # Update with real handshake detection data
-                observation["handshake_ready"] = float(handshake_result['ready'])
+                # Add handshake detection data to observation
+                observation["handshake_ready"] = int(handshake_result['ready'])  # Convert bool to int
                 observation["handshake_confidence"] = handshake_result['confidence']
                 if handshake_result['hand_position'] is not None:
                     observation["hand_position_x"] = float(handshake_result['hand_position'][0])
                     observation["hand_position_y"] = float(handshake_result['hand_position'][1])
-                    
-                if debug_mode:
-                    logging.info(f"DEBUG: Added handshake data - ready: {observation['handshake_ready']}, confidence: {observation['handshake_confidence']:.3f}")
-                    
-            except Exception as e:
-                logging.error(f"Error in handshake detection: {e}")
-                if debug_mode:
-                    import traceback
-                    logging.error(f"Full traceback: {traceback.format_exc()}")
-        else:
-            if debug_mode:
-                logging.warning(f"DEBUG: Camera '{main_camera_name}' not found in observation, using default handshake values")
+                else:
+                    observation["hand_position_x"] = -1.0  # Invalid position marker
+                    observation["hand_position_y"] = -1.0
 
-        if policy is not None or dataset is not None:
-            if debug_mode:
-                logging.info("=== DEBUG: Before build_dataset_frame ===")
-                logging.info(f"Observation keys: {list(observation.keys())}")
-                observation_features = {k: v for k, v in dataset.features.items() if k.startswith("observation.")}
-                logging.info(f"Expected observation features: {list(observation_features.keys())}")
-                for feature_key, feature_def in observation_features.items():
-                    if feature_def.get("names"):
-                        for name in feature_def["names"]:
-                            if name in observation:
-                                logging.info(f"✅ Found {name} in observation: {observation[name]}")
-                            else:
-                                logging.error(f"❌ Missing {name} in observation (needed for {feature_key})")
+            if policy is not None or dataset is not None:
+                observation_frame = build_dataset_frame(dataset.features, observation, prefix="observation")
+
+            if policy is not None:
+                action_values = predict_action(
+                    observation_frame,
+                    policy,
+                    get_safe_torch_device(policy.config.device),
+                    policy.config.use_amp,
+                    task=single_task,
+                    robot_type=robot.robot_type,
+                )
+                action = {key: action_values[i].item() for i, key in enumerate(robot.action_features)}
+            elif policy is None and teleop is not None:
+                action = teleop.get_action()
+            else:
+                if debug_mode and frame_count == 1:
+                    print("No policy or teleoperator provided, skipping action generation.")
+                continue
+
+            # Action can eventually be clipped using `max_relative_target`,
+            # so action actually sent is saved in the dataset.
+            sent_action = robot.send_action(action)
+
+            if dataset is not None:
+                action_frame = build_dataset_frame(dataset.features, sent_action, prefix="action")
+                frame = {**observation_frame, **action_frame}
+                dataset.add_frame(frame, task=single_task)
+
+            if display_data:
+                # Display handshake detection results
+                if handshake_detector and main_camera_name in observation:
+                    frame = observation[main_camera_name]
+                    handshake_result = handshake_detector.detect_handshake_gesture(frame, visualize=True)
+                    if 'annotated_frame' in handshake_result:
+                        cv2.imshow('Handshake Detection During Recording', handshake_result['annotated_frame'])
+                        cv2.waitKey(1)
+                
+                for obs, val in observation.items():
+                    if isinstance(val, (float, int)):
+                        rr.log(f"observation.{obs}", rr.Scalar(val))
+                    elif isinstance(val, np.ndarray):
+                        rr.log(f"observation.{obs}", rr.Image(val), static=True)
+                for act, val in action.items():
+                    if isinstance(val, (float, int)):
+                        rr.log(f"action.{act}", rr.Scalar(val))
+
+            dt_s = time.perf_counter() - start_loop_t
+            busy_wait(1 / fps - dt_s)
+
+            timestamp = time.perf_counter() - start_episode_t
             
-            observation_frame = build_dataset_frame(dataset.features, observation, prefix="observation")
+        except KeyboardInterrupt:
+            print("KeyboardInterrupt in record loop!")
+            break
+        except Exception as e:
+            print(f"ERROR in record loop: {e}")
+            if debug_mode:
+                traceback.print_exc()
+            break
 
-        if policy is not None:
-            action_values = predict_action(
-                observation_frame,
-                policy,
-                get_safe_torch_device(policy.config.device),
-                policy.config.use_amp,
-                task=single_task,
-                robot_type=robot.robot_type,
-            )
-            action = {key: action_values[i].item() for i, key in enumerate(robot.action_features)}
-        elif policy is None and teleop is not None:
-            action = teleop.get_action()
-        else:
-            logging.info(
-                "No policy or teleoperator provided, skipping action generation."
-                "This is likely to happen when resetting the environment without a teleop device."
-                "The robot won't be at its rest position at the start of the next episode."
-            )
-            continue
-
-        # Action can eventually be clipped using `max_relative_target`,
-        # so action actually sent is saved in the dataset.
-        sent_action = robot.send_action(action)
-
-        if dataset is not None:
-            action_frame = build_dataset_frame(dataset.features, sent_action, prefix="action")
-            frame = {**observation_frame, **action_frame}
-            dataset.add_frame(frame, task=single_task)
-
-        if display_data:
-            # Display handshake detection results
-            if main_camera_name in observation:
-                frame = observation[main_camera_name]
-                handshake_result = handshake_detector.detect_handshake_gesture(frame, visualize=True)
-                if 'annotated_frame' in handshake_result:
-                    cv2.imshow('Handshake Detection During Recording', handshake_result['annotated_frame'])
-                    cv2.waitKey(1)
-            
-            for obs, val in observation.items():
-                if isinstance(val, float):
-                    rr.log(f"observation.{obs}", rr.Scalar(val))
-                elif isinstance(val, np.ndarray):
-                    rr.log(f"observation.{obs}", rr.Image(val), static=True)
-            for act, val in action.items():
-                if isinstance(val, float):
-                    rr.log(f"action.{act}", rr.Scalar(val))
-
-        dt_s = time.perf_counter() - start_loop_t
-        busy_wait(1 / fps - dt_s)
-
-        timestamp = time.perf_counter() - start_episode_t
+    print(f"Record loop completed: {frame_count} frames, {timestamp:.1f}s")
 
 
 @parser.wrap()
-def test_record_handshake(cfg: TestHandshakeRecordConfig) -> LeRobotDataset:
+def test_record_handshake(cfg: HandshakeRecordConfig) -> LeRobotDataset:
+    """Test version of handshake recording with extensive debugging"""
     init_logging()
-    logging.info("=== TEST RECORD HANDSHAKE ===")
+    logging.info("=== STARTING TEST HANDSHAKE RECORDING ===")
     logging.info(pformat(asdict(cfg)))
     
     if cfg.display_data:
         _init_rerun(session_name="test_handshake_recording")
 
+    print("\n=== CREATING ROBOT ===")
     robot = make_robot_from_config(cfg.robot)
+    
+    print("\n=== CREATING TELEOPERATOR ===")
     teleop = make_teleoperator_from_config(cfg.teleop) if cfg.teleop is not None else None
 
     # Initialize handshake detector
-    try:
-        handshake_detector = ImprovedHandshakeDetector(
-            confidence_threshold=cfg.dataset.handshake_confidence_threshold
-        )
-        logging.info(f"Handshake detector initialized with confidence threshold: {cfg.dataset.handshake_confidence_threshold}")
-    except ImportError as e:
-        logging.error(f"Failed to initialize handshake detector: {e}")
-        logging.error("Please install required dependencies: pip install mediapipe opencv-python")
-        raise
+    handshake_detector = None
+    if not cfg.dataset.skip_handshake_detection:
+        try:
+            if ImprovedHandshakeDetector is None:
+                raise ImportError("ImprovedHandshakeDetector not available")
+            handshake_detector = ImprovedHandshakeDetector(
+                confidence_threshold=cfg.dataset.handshake_confidence_threshold
+            )
+            print(f"Handshake detector initialized with confidence threshold: {cfg.dataset.handshake_confidence_threshold}")
+        except ImportError as e:
+            print(f"Failed to initialize handshake detector: {e}")
+            print("Please install required dependencies: pip install mediapipe opencv-python")
+            if not cfg.dataset.skip_handshake_detection:
+                raise
+    else:
+        print("Skipping handshake detection (debug mode)")
 
     # Determine main camera name (assume first camera is the main one)
-    if not hasattr(robot.config, 'cameras') or not robot.config.cameras:
-        raise ValueError("Robot must have at least one camera configured for handshake detection")
-    
-    main_camera_name = list(robot.config.cameras.keys())[0]
-    logging.info(f"Using camera '{main_camera_name}' for handshake detection")
+    main_camera_name = None
+    if hasattr(robot.config, 'cameras') and robot.config.cameras:
+        main_camera_name = list(robot.config.cameras.keys())[0]
+        print(f"Using camera '{main_camera_name}' for handshake detection")
+    else:
+        print("WARNING: No cameras configured")
 
     # Build dataset features including handshake detection data
     action_features = hw_to_dataset_features(robot.action_features, "action", cfg.dataset.video)
     obs_features = hw_to_dataset_features(robot.observation_features, "observation", cfg.dataset.video)
     
-    # Add handshake detection features (all float32 to match build_dataset_frame requirements)
-    handshake_features = {
-        "observation.handshake_ready": {
-            "dtype": "float32",
-            "shape": (1,),
-            "names": ["handshake_ready"],
-        },
-        "observation.handshake_confidence": {
-            "dtype": "float32", 
-            "shape": (1,),
-            "names": ["handshake_confidence"],
-        },
-        "observation.hand_position_x": {
-            "dtype": "float32",
-            "shape": (1,),
-            "names": ["hand_position_x"],
-        },
-        "observation.hand_position_y": {
-            "dtype": "float32",
-            "shape": (1,),
-            "names": ["hand_position_y"],
-        },
-    }
+    # Add handshake detection features if detector available
+    handshake_features = {}
+    if handshake_detector:
+        handshake_features = {
+            "observation.handshake_ready": {
+                "dtype": "int64",
+                "shape": (1,),
+                "names": None,
+            },
+            "observation.handshake_confidence": {
+                "dtype": "float32", 
+                "shape": (1,),
+                "names": None,
+            },
+            "observation.hand_position_x": {
+                "dtype": "float32",
+                "shape": (1,),
+                "names": None,
+            },
+            "observation.hand_position_y": {
+                "dtype": "float32",
+                "shape": (1,),
+                "names": None,
+            },
+        }
     
     dataset_features = {**action_features, **obs_features, **handshake_features}
-    
-    if cfg.dataset.debug_mode:
-        logging.info("=== DEBUG: Robot Features ===")
-        logging.info(f"Robot observation features: {robot.observation_features}")
-        logging.info(f"Robot action features: {robot.action_features}")
-        if hasattr(robot, 'camera_features'):
-            logging.info(f"Robot camera features: {robot.camera_features}")
-        else:
-            logging.info("Robot has no camera_features property")
-        
-        logging.info("=== DEBUG: Dataset Features ===")
-        for key, value in dataset_features.items():
-            logging.info(f"  {key}: {value}")
-        
-        logging.info("=== DEBUG: Action Features ===")
-        for key, value in action_features.items():
-            logging.info(f"  {key}: {value}")
-            
-        logging.info("=== DEBUG: Obs Features ===")
-        for key, value in obs_features.items():
-            logging.info(f"  {key}: {value}")
+    print(f"\nDataset features: {list(dataset_features.keys())}")
 
     if cfg.resume:
         dataset = LeRobotDataset(
@@ -481,93 +563,116 @@ def test_record_handshake(cfg: TestHandshakeRecordConfig) -> LeRobotDataset:
     # Load pretrained policy
     policy = None if cfg.policy is None else make_policy(cfg.policy, ds_meta=dataset.meta)
 
+    print("\n=== CONNECTING TO ROBOT ===")
     robot.connect()
     if teleop is not None:
         teleop.connect()
 
+    # Test robot connection
+    observation = test_robot_connection(robot, cfg.dataset.debug_mode)
+    if observation is None:
+        print("ERROR: Could not get robot observation")
+        return None
+
+    # Test handshake detection if available
+    if handshake_detector and observation:
+        test_handshake_detection(observation, cfg.dataset.debug_mode)
+
     listener, events = init_keyboard_listener()
+    print("Keyboard listener initialized. Use Space to start/stop, Q to quit, R to re-record")
 
     recorded_episodes = 0
-    while recorded_episodes < cfg.dataset.num_episodes and not events["stop_recording"]:
-        log_say(f"TEST: Preparing to record handshake episode {dataset.num_episodes + 1}", cfg.play_sounds)
-        
-        # Wait for handshake detection before starting episode (unless skipped)
-        if cfg.dataset.skip_handshake_detection:
-            log_say("TEST: Skipping handshake detection - starting recording immediately", cfg.play_sounds)
-            handshake_detected = True
-        else:
-            handshake_detected = wait_for_handshake_detection_debug(
-                robot=robot,
-                handshake_detector=handshake_detector,
-                camera_name=main_camera_name,
-                timeout_s=cfg.dataset.handshake_timeout_s,
-                confidence_threshold=cfg.dataset.handshake_confidence_threshold,
-                detection_delay=cfg.dataset.handshake_detection_delay,
-                display_data=cfg.display_data,
-                debug_mode=cfg.dataset.debug_mode,
-            )
-        
-        if not handshake_detected:
-            log_say("TEST: Skipping episode due to handshake detection timeout", cfg.play_sounds)
-            continue
-        
-        log_say(f"TEST: Recording handshake episode {dataset.num_episodes + 1}", cfg.play_sounds)
-        record_test_handshake_episode(
-            robot=robot,
-            events=events,
-            fps=cfg.dataset.fps,
-            handshake_detector=handshake_detector,
-            main_camera_name=main_camera_name,
-            teleop=teleop,
-            policy=policy,
-            dataset=dataset,
-            control_time_s=cfg.dataset.episode_time_s,
-            single_task=cfg.dataset.single_task,
-            display_data=cfg.display_data,
-            debug_mode=cfg.dataset.debug_mode,
-        )
-
-        # Execute a few seconds without recording to give time to manually reset the environment
-        # Skip reset for the last episode to be recorded
-        if not events["stop_recording"] and (
-            (recorded_episodes < cfg.dataset.num_episodes - 1) or events["rerecord_episode"]
-        ):
-            log_say("TEST: Reset the environment for next handshake", cfg.play_sounds)
-            # Use regular record loop for reset (without handshake detection)
-            from lerobot.record import record_loop
-            record_loop(
+    try:
+        while recorded_episodes < cfg.dataset.num_episodes and not events["stop_recording"]:
+            log_say(f"Preparing to record handshake episode {dataset.num_episodes + 1}", cfg.play_sounds)
+            
+            # Wait for handshake detection before starting episode (unless skipped)
+            handshake_detected = True  # Default to True
+            if not cfg.dataset.skip_handshake_detection and handshake_detector and main_camera_name:
+                handshake_detected = wait_for_handshake_detection_test(
+                    robot=robot,
+                    handshake_detector=handshake_detector,
+                    camera_name=main_camera_name,
+                    timeout_s=cfg.dataset.handshake_timeout_s,
+                    confidence_threshold=cfg.dataset.handshake_confidence_threshold,
+                    detection_delay=cfg.dataset.handshake_detection_delay,
+                    debug_mode=cfg.dataset.debug_mode,
+                    display_data=cfg.display_data,
+                )
+            else:
+                log_say("Skipping handshake detection - starting recording immediately", cfg.play_sounds)
+            
+            if not handshake_detected:
+                log_say("Skipping episode due to handshake detection timeout", cfg.play_sounds)
+                continue
+            
+            log_say(f"Recording handshake episode {dataset.num_episodes + 1}", cfg.play_sounds)
+            record_handshake_loop_test(
                 robot=robot,
                 events=events,
                 fps=cfg.dataset.fps,
+                handshake_detector=handshake_detector,
+                main_camera_name=main_camera_name,
                 teleop=teleop,
-                control_time_s=cfg.dataset.reset_time_s,
+                policy=policy,
+                dataset=dataset,
+                control_time_s=cfg.dataset.episode_time_s,
                 single_task=cfg.dataset.single_task,
                 display_data=cfg.display_data,
+                debug_mode=cfg.dataset.debug_mode,
             )
 
-        if events["rerecord_episode"]:
-            log_say("TEST: Re-record episode", cfg.play_sounds)
-            events["rerecord_episode"] = False
-            events["exit_early"] = False
-            dataset.clear_episode_buffer()
-            continue
+            # Execute a few seconds without recording to give time to manually reset the environment
+            # Skip reset for the last episode to be recorded
+            if not events["stop_recording"] and (
+                (recorded_episodes < cfg.dataset.num_episodes - 1) or events["rerecord_episode"]
+            ):
+                log_say("Reset the environment for next handshake", cfg.play_sounds)
+                # Use regular record loop for reset (without handshake detection)
+                from lerobot.record import record_loop
+                record_loop(
+                    robot=robot,
+                    events=events,
+                    fps=cfg.dataset.fps,
+                    teleop=teleop,
+                    control_time_s=cfg.dataset.reset_time_s,
+                    single_task=cfg.dataset.single_task,
+                    display_data=cfg.display_data,
+                )
 
-        dataset.save_episode()
-        recorded_episodes += 1
+            if events["rerecord_episode"]:
+                log_say("Re-record episode", cfg.play_sounds)
+                events["rerecord_episode"] = False
+                events["exit_early"] = False
+                dataset.clear_episode_buffer()
+                continue
 
-    log_say("TEST: Stop recording handshake dataset", cfg.play_sounds, blocking=True)
+            dataset.save_episode()
+            recorded_episodes += 1
 
-    robot.disconnect()
-    if teleop is not None:
-        teleop.disconnect()
+    except KeyboardInterrupt:
+        print("\n=== KEYBOARD INTERRUPT RECEIVED ===")
+        log_say("Recording interrupted by user", cfg.play_sounds)
+    except Exception as e:
+        print(f"\n=== ERROR DURING RECORDING ===")
+        print(f"Error: {e}")
+        if cfg.dataset.debug_mode:
+            traceback.print_exc()
+    finally:
+        print("\n=== CLEANUP ===")
+        log_say("Stop recording handshake dataset", cfg.play_sounds, blocking=True)
 
-    if not is_headless() and listener is not None:
-        listener.stop()
+        robot.disconnect()
+        if teleop is not None:
+            teleop.disconnect()
 
-    # Close OpenCV windows
-    cv2.destroyAllWindows()
+        if not is_headless() and listener is not None:
+            listener.stop()
 
-    log_say("TEST: Exiting", cfg.play_sounds)
+        # Close OpenCV windows
+        cv2.destroyAllWindows()
+
+    log_say("Exiting", cfg.play_sounds)
     return dataset
 
 
