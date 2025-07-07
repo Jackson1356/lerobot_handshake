@@ -138,7 +138,7 @@ python lerobot/scripts/control_robot.py calibrate \
 
 ---
 
-## 📊 Recording Handshake Datasets
+## 🎥 Recording Handshake Datasets
 
 Use the specialized `record_handshake.py` script to collect demonstration data:
 
