@@ -40,13 +40,8 @@ from .common.teleoperators import (  # noqa: F401
 )
 
 COMPATIBLE_DEVICES = [
-    "koch_follower",
-    "koch_leader",
-    "so100_follower",
-    "so100_leader",
     "so101_follower",
     "so101_leader",
-    "lekiwi",
 ]
 
 
