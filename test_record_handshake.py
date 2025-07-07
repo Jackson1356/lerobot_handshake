@@ -275,7 +275,7 @@ def record_test_handshake_episode(
                 handshake_result = handshake_detector.detect_handshake_gesture(frame, visualize=False)
                 
                 # Add handshake detection data to observation
-                observation["handshake_ready"] = handshake_result['ready']
+                observation["handshake_ready"] = int(handshake_result['ready'])
                 observation["handshake_confidence"] = handshake_result['confidence']
                 if handshake_result['hand_position'] is not None:
                     observation["hand_position_x"] = float(handshake_result['hand_position'][0])
@@ -290,7 +290,7 @@ def record_test_handshake_episode(
             except Exception as e:
                 logging.error(f"Error adding handshake detection to observation: {e}")
                 # Add default values
-                observation["handshake_ready"] = False
+                observation["handshake_ready"] = 0  # Use integer 0 instead of False
                 observation["handshake_confidence"] = 0.0
                 observation["hand_position_x"] = -1.0
                 observation["hand_position_y"] = -1.0
@@ -390,22 +390,22 @@ def test_record_handshake(cfg: TestHandshakeRecordConfig) -> LeRobotDataset:
         "observation.handshake_ready": {
             "dtype": "int64",
             "shape": (1,),
-            "names": None,
+            "names": ["handshake_ready"],
         },
         "observation.handshake_confidence": {
             "dtype": "float32", 
             "shape": (1,),
-            "names": None,
+            "names": ["handshake_confidence"],
         },
         "observation.hand_position_x": {
             "dtype": "float32",
             "shape": (1,),
-            "names": None,
+            "names": ["hand_position_x"],
         },
         "observation.hand_position_y": {
             "dtype": "float32",
             "shape": (1,),
-            "names": None,
+            "names": ["hand_position_y"],
         },
     }
     
