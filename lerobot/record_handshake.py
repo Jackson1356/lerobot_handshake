@@ -24,12 +24,12 @@ Example:
 ```shell
 python -m lerobot.record_handshake \
     --robot.type=so101_follower \
-    --robot.port=/dev/tty.usbmodem58760431541 \
-    --robot.cameras="{main: {type: opencv, camera_index: 0, width: 640, height: 480}}" \
-    --robot.id=black \
+    --robot.port=/dev/ttyACM1 \
+    --robot.cameras="{ front: {type: opencv, index_or_path: 0, width: 640, height: 480, fps: 30}}" \
+    --robot.id=my_follower_arm \
     --teleop.type=so101_leader \
-    --teleop.port=/dev/tty.usbmodem58760431551 \
-    --teleop.id=blue \
+    --teleop.port=/dev/ttyACM0 \
+    --teleop.id=my_leader_arm \
     --dataset.repo_id=your_username/handshake_dataset \
     --dataset.num_episodes=10 \
     --dataset.single_task="Shake hands with person when they extend their hand" \

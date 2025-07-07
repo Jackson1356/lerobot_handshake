@@ -206,15 +206,16 @@ Use the specialized `record_handshake.py` script to collect demonstration data:
 python -m lerobot.record_handshake \
     --robot.type=so101_follower \
     --robot.port=/dev/ttyACM1 \
-    --robot.cameras='{"front": {"type": "opencv", "index_or_path": 0, "width": 640, "height": 480, "fps": 30}}' \
+    --robot.cameras="{ front: {type: opencv, index_or_path: 0, width: 640, height: 480, fps: 30}}" \
     --robot.id=my_follower_arm \
     --teleop.type=so101_leader \
     --teleop.port=/dev/ttyACM0 \
     --teleop.id=my_leader_arm \
-    --dataset.repo_id=your-username/handshake_dataset \
-    --episode-time-s=30 \
-    --reset-time-s=10 \
-    --num-episodes=50
+    --dataset.repo_id=your_username/handshake_dataset \
+    --dataset.num_episodes=10 \
+    --dataset.single_task="Shake hands with person when they extend their hand" \
+    --dataset.episode_time_s=30 \      
+    --dataset.reset_time_s=15         
 ```
 
 ### Recording Process
