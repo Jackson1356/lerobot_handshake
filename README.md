@@ -118,7 +118,7 @@ pip install -e .
    ```
 4. **Test camera connection**:
 ```bash
-   python lerobot/find_cameras.py opencv
+   python -m lerobot.find_cameras opencv
 ```
 
 ### 3. Calibrate Your Robots
@@ -336,7 +336,7 @@ handshake_timeout = 30.0
 **Camera not detected:**
 ```bash
 # List available cameras
-python lerobot/find_cameras.py opencv
+python -m lerobot.find_cameras opencv
 
 # Test specific camera index
 python pose_detection/simple_camera_test.py
