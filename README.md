@@ -123,7 +123,7 @@ pip install -e .
 
 ### 3. Calibrate Your Robots
 
-Calibrate both leader and follower arms following the [official SO-101 calibration guide](https://huggingface.co/docs/lerobot/so101#calibrate-your-robots):
+Calibrate both leader and follower arms following the [official SO-101 calibration guide](https://huggingface.co/docs/lerobot/so101#calibrate):
 ```bash
 # Calibrate follower arm
 python lerobot/scripts/control_robot.py calibrate \
