@@ -2,12 +2,12 @@
 
 <p align="center">
   <div style="display: flex; align-items: center; justify-content: center; gap: 20px;">
+    <img alt="LeRobot Handshake Logo" src="media/lerobot-logo-handshake.png" style="height: 200px; width: auto;">
     <picture>
       <source media="(prefers-color-scheme: dark)" srcset="media/lerobot-logo-thumbnail.png">
       <source media="(prefers-color-scheme: light)" srcset="media/lerobot-logo-thumbnail.png">
       <img alt="LeRobot Handshake Detection" src="media/lerobot-logo-thumbnail.png" style="height: 200px; width: auto;">
     </picture>
-    <img alt="LeRobot Handshake Logo" src="media/lerobot-logo-handshake.png" style="height: 200px; width: auto;">
   </div>
   <br/>
   <br/>
