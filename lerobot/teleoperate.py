@@ -65,7 +65,6 @@ from .common.teleoperators import (
 from .common.utils.robot_utils import busy_wait
 from .common.utils.utils import init_logging, move_cursor_up
 from .common.utils.visualization_utils import _init_rerun
-from .configs import parser
 
 from .common.teleoperators import keyboard, so101_leader  # noqa: F401
 
@@ -118,7 +117,7 @@ def teleop_loop(
         move_cursor_up(len(action) + 5)
 
 
-@parser.wrap()
+@draccus.wrap()
 def teleoperate(cfg: TeleoperateConfig):
     init_logging()
     logging.info(pformat(asdict(cfg)))

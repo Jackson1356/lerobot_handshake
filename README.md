@@ -206,7 +206,7 @@ Use the specialized `record_handshake.py` script to collect demonstration data:
 python lerobot/record_handshake.py \
     --robot.type=so101_follower \
     --robot.port=/dev/ttyACM1 \
-    --robot.cameras="{ front: {type: opencv, index_or_path: 0, width: 640, height: 480, fps: 30}}" \
+    --robot.cameras='{"front": {"type": "opencv", "index_or_path": 0, "width": 640, "height": 480, "fps": 30}}' \
     --robot.id=follower_arm \
     --teleop.type=so101_leader \
     --teleop.port=/dev/ttyACM0 \
@@ -302,7 +302,7 @@ python lerobot/scripts/eval.py \
     --policy.name=handshake_policy_v1 \
     --robot.type=so101_follower \
     --robot.port=/dev/ttyACM0 \
-    --robot.cameras="{ front: {type: opencv, index_or_path: 0, width: 640, height: 480, fps: 30}}" \
+    --robot.cameras='{"front": {"type": "opencv", "index_or_path": 0, "width": 640, "height": 480, "fps": 30}}' \
     --eval.num_episodes=10
 ```
 
