@@ -20,7 +20,7 @@ Example:
 ```shell
 python -m lerobot.calibrate \
     --teleop.type=so100_leader \
-    --teleop.port=/dev/tty.usbmodem58760431551 \
+    --teleop.port=/dev/ttyACM0 \
     --teleop.id=blue
 ```
 """
@@ -36,18 +36,13 @@ from lerobot.common.cameras.realsense.configuration_realsense import RealSenseCa
 from lerobot.common.robots import (  # noqa: F401
     Robot,
     RobotConfig,
-    koch_follower,
-    lekiwi,
     make_robot_from_config,
-    so100_follower,
     so101_follower,
 )
 from lerobot.common.teleoperators import (  # noqa: F401
     Teleoperator,
     TeleoperatorConfig,
-    koch_leader,
     make_teleoperator_from_config,
-    so100_leader,
     so101_leader,
 )
 from lerobot.common.utils.utils import init_logging
