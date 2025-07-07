@@ -86,7 +86,7 @@ This project extends LeRobot to enable SO-101 robots to:
 
 ---
 
-## 🚀 Quick Start
+## 🚀 Quick Setup
 
 ### 1. Installation
 
@@ -207,10 +207,10 @@ python lerobot/record_handshake.py \
     --robot.type=so101_follower \
     --robot.port=/dev/ttyACM1 \
     --robot.cameras='{"front": {"type": "opencv", "index_or_path": 0, "width": 640, "height": 480, "fps": 30}}' \
-    --robot.id=follower_arm \
+    --robot.id=my_follower_arm \
     --teleop.type=so101_leader \
     --teleop.port=/dev/ttyACM0 \
-    --teleop.id=leader_arm \
+    --teleop.id=my_leader_arm \
     --dataset.repo_id=your-username/handshake_dataset \
     --episode-time-s=30 \
     --reset-time-s=10 \
