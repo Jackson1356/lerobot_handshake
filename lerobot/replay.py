@@ -79,7 +79,7 @@ def replay(cfg: ReplayConfig):
     robot = make_robot_from_config(cfg.robot)
     dataset = LeRobotDataset(cfg.dataset.repo_id, root=cfg.dataset.root, episodes=[cfg.dataset.episode])
     actions = dataset.hf_dataset.select_columns("action")
-    robot.connect()
+    robot.connect(calibrate=False)
 
     log_say("Replaying episode", cfg.play_sounds, blocking=True)
     for idx in range(dataset.num_frames):

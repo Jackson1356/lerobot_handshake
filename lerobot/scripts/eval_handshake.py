@@ -469,7 +469,7 @@ def eval_handshake_main(cfg: HandshakeEvalPipelineConfig):
     # Initialize robot
     logging.info("Connecting to robot...")
     robot = make_robot_from_config(cfg.robot)
-    robot.connect()
+    robot.connect(calibrate=False)
     
     try:
         # Load policy
