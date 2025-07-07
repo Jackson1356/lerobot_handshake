@@ -12,25 +12,45 @@ import cv2
 import numpy as np
 import rerun as rr
 
-from lerobot.common.datasets.utils import (
-    DEFAULT_FEATURES,
-    build_dataset_frame,
-    hw_to_dataset_features,
+from lerobot.common.cameras import (  # noqa: F401
+    CameraConfig,  # noqa: F401
 )
+from lerobot.common.cameras.opencv.configuration_opencv import OpenCVCameraConfig  # noqa: F401
+from lerobot.common.cameras.realsense.configuration_realsense import RealSenseCameraConfig  # noqa: F401
+from lerobot.common.datasets.image_writer import safe_stop_image_writer
 from lerobot.common.datasets.lerobot_dataset import LeRobotDataset
+from lerobot.common.datasets.utils import build_dataset_frame, hw_to_dataset_features
 from lerobot.common.handshake_detection import ImprovedHandshakeDetector
 from lerobot.common.policies.factory import make_policy
-from lerobot.common.policies.pretrained import PreTrainedConfig
-from lerobot.common.policies.utils import predict_action
-from lerobot.common.robot.utils import make_robot_from_config
-from lerobot.common.teleoperators.utils import make_teleoperator_from_config
-from lerobot.common.utils.control_utils import sanity_check_dataset_name, sanity_check_dataset_robot_compatibility
-from lerobot.common.utils.io_utils import init_logging
-from lerobot.common.utils.process import busy_wait
-from lerobot.common.utils.train_utils import get_safe_torch_device
-from lerobot.common.utils.utils import init_keyboard_listener, is_headless, log_say, safe_stop_image_writer
+from lerobot.common.policies.pretrained import PreTrainedPolicy
+from lerobot.common.robots import (  # noqa: F401
+    Robot,
+    RobotConfig,
+    make_robot_from_config,
+    so101_follower,
+)
+from lerobot.common.teleoperators import (  # noqa: F401
+    Teleoperator,
+    TeleoperatorConfig,
+    make_teleoperator_from_config,
+    so101_leader,
+)
+from lerobot.common.utils.control_utils import (
+    init_keyboard_listener,
+    is_headless,
+    predict_action,
+    sanity_check_dataset_name,
+    sanity_check_dataset_robot_compatibility,
+)
+from lerobot.common.utils.robot_utils import busy_wait
+from lerobot.common.utils.utils import (
+    get_safe_torch_device,
+    init_logging,
+    log_say,
+)
+from lerobot.common.utils.visualization_utils import _init_rerun
 from lerobot.configs import parser
-from lerobot.configs.config import RobotConfig, TeleoperatorConfig
+from lerobot.configs.policies import PreTrainedConfig
 
 
 def _init_rerun(session_name: str = "data_collection"):
