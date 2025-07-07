@@ -432,8 +432,24 @@ def test_record_handshake(cfg: TestHandshakeRecordConfig) -> LeRobotDataset:
     dataset_features = {**action_features, **obs_features, **handshake_features}
     
     if cfg.dataset.debug_mode:
+        logging.info("=== DEBUG: Robot Features ===")
+        logging.info(f"Robot observation features: {robot.observation_features}")
+        logging.info(f"Robot action features: {robot.action_features}")
+        if hasattr(robot, 'camera_features'):
+            logging.info(f"Robot camera features: {robot.camera_features}")
+        else:
+            logging.info("Robot has no camera_features property")
+        
         logging.info("=== DEBUG: Dataset Features ===")
         for key, value in dataset_features.items():
+            logging.info(f"  {key}: {value}")
+        
+        logging.info("=== DEBUG: Action Features ===")
+        for key, value in action_features.items():
+            logging.info(f"  {key}: {value}")
+            
+        logging.info("=== DEBUG: Obs Features ===")
+        for key, value in obs_features.items():
             logging.info(f"  {key}: {value}")
 
     if cfg.resume:
