@@ -268,32 +268,36 @@ def record_test_handshake_episode(
         if debug_mode:
             logging.info(f"DEBUG: Episode observation keys: {list(observation.keys())}")
 
-        # Add handshake detection to observation
+        # Always add handshake detection data to observation (with defaults if detection fails)
+        observation["handshake_ready"] = 0
+        observation["handshake_confidence"] = 0.0
+        observation["hand_position_x"] = -1.0
+        observation["hand_position_y"] = -1.0
+        
+        # Try to add real handshake detection if camera is available
         if main_camera_name in observation:
             frame = observation[main_camera_name]
             try:
                 handshake_result = handshake_detector.detect_handshake_gesture(frame, visualize=False)
                 
-                # Add handshake detection data to observation
+                # Update with real handshake detection data
                 observation["handshake_ready"] = int(handshake_result['ready'])
                 observation["handshake_confidence"] = handshake_result['confidence']
                 if handshake_result['hand_position'] is not None:
                     observation["hand_position_x"] = float(handshake_result['hand_position'][0])
                     observation["hand_position_y"] = float(handshake_result['hand_position'][1])
-                else:
-                    observation["hand_position_x"] = -1.0  # Invalid position marker
-                    observation["hand_position_y"] = -1.0
                     
                 if debug_mode:
                     logging.info(f"DEBUG: Added handshake data - ready: {observation['handshake_ready']}, confidence: {observation['handshake_confidence']:.3f}")
                     
             except Exception as e:
-                logging.error(f"Error adding handshake detection to observation: {e}")
-                # Add default values
-                observation["handshake_ready"] = 0  # Use integer 0 instead of False
-                observation["handshake_confidence"] = 0.0
-                observation["hand_position_x"] = -1.0
-                observation["hand_position_y"] = -1.0
+                logging.error(f"Error in handshake detection: {e}")
+                if debug_mode:
+                    import traceback
+                    logging.error(f"Full traceback: {traceback.format_exc()}")
+        else:
+            if debug_mode:
+                logging.warning(f"DEBUG: Camera '{main_camera_name}' not found in observation, using default handshake values")
 
         if policy is not None or dataset is not None:
             observation_frame = build_dataset_frame(dataset.features, observation, prefix="observation")
