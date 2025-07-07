@@ -128,12 +128,12 @@ Calibrate both leader and follower arms following the [official SO-101 calibrati
 # Calibrate follower arm
 python lerobot/scripts/control_robot.py calibrate \
     --robot.type=so101_follower \
-    --robot.port=/dev/ttyACM0
+    --robot.port=/dev/ttyACM1
 
 # Calibrate leader arm  
 python lerobot/scripts/control_robot.py calibrate \
     --robot.type=so101_leader \
-    --robot.port=/dev/ttyACM1
+    --robot.port=/dev/ttyACM0
 ```
 
 ### 4. Manual Teleoperation
@@ -144,19 +144,19 @@ Practice controlling your robot before recording datasets.
 ```bash
 python -m lerobot.teleoperate \
     --robot.type=so101_follower \
-    --robot.port=/dev/ttyACM0 \
+    --robot.port=/dev/ttyACM1 \
     --teleop.type=so101_leader \
-    --teleop.port=/dev/ttyACM1
+    --teleop.port=/dev/ttyACM0
 ```
 
 2. With Camera
 ```bash
 python -m lerobot.teleoperate \
     --robot.type=so101_follower \
-    --robot.port=/dev/ttyACM0 \
+    --robot.port=/dev/ttyACM1 \
     --robot.cameras="{ front: {type: opencv, index_or_path: 0, width: 640, height: 480, fps: 30}}" \
     --teleop.type=so101_leader \
-    --teleop.port=/dev/ttyACM1 \
+    --teleop.port=/dev/ttyACM0 \
     --display_data=true
 ```
 
@@ -174,11 +174,11 @@ Use the specialized `record_handshake.py` script to collect demonstration data:
 ```bash
 python lerobot/record_handshake.py \
     --robot.type=so101_follower \
-    --robot.port=/dev/ttyACM0 \
+    --robot.port=/dev/ttyACM1 \
     --robot.cameras="{ front: {type: opencv, index_or_path: 0, width: 640, height: 480, fps: 30}}" \
     --robot.id=follower_arm \
     --teleop.type=so101_leader \
-    --teleop.port=/dev/ttyACM1 \
+    --teleop.port=/dev/ttyACM0 \
     --teleop.id=leader_arm \
     --dataset.repo_id=your-username/handshake_dataset \
     --episode-time-s=30 \
