@@ -136,6 +136,35 @@ python lerobot/scripts/control_robot.py calibrate \
     --robot.port=/dev/ttyACM1
 ```
 
+### 4. Manual Teleoperation
+
+Practice controlling your robot before recording datasets.
+
+1. Without Camera
+```bash
+python -m lerobot.teleoperate \
+    --robot.type=so101_follower \
+    --robot.port=/dev/ttyACM0 \
+    --teleop.type=so101_leader \
+    --teleop.port=/dev/ttyACM1
+```
+
+2. With Camera
+```bash
+python -m lerobot.teleoperate \
+    --robot.type=so101_follower \
+    --robot.port=/dev/ttyACM0 \
+    --robot.cameras="{ front: {type: opencv, index_or_path: 0, width: 640, height: 480, fps: 30}}" \
+    --teleop.type=so101_leader \
+    --teleop.port=/dev/ttyACM1 \
+    --display_data=true
+```
+
+**Tips**: Start without camera first, practice smooth movements, always supervise the robot.
+
+---
+
+
 ---
 
 ## 🎥 Recording Handshake Datasets
@@ -168,34 +197,6 @@ python lerobot/record_handshake.py \
 - **⬅️ Left Arrow**: Re-record current episode (if something goes wrong)
 - **➡️ Right Arrow**: End episode early and move to reset phase
 - **⎋ Escape**: Stop entire recording session
-
----
-
-## 🎮 Manual Teleoperation
-
-Practice controlling your robot before recording datasets.
-
-### Without Camera
-```bash
-python -m lerobot.teleoperate \
-    --robot.type=so101_follower \
-    --robot.port=/dev/ttyACM0 \
-    --teleop.type=so101_leader \
-    --teleop.port=/dev/ttyACM1
-```
-
-### With Camera
-```bash
-python -m lerobot.teleoperate \
-    --robot.type=so101_follower \
-    --robot.port=/dev/ttyACM0 \
-    --robot.cameras="{ front: {type: opencv, index_or_path: 0, width: 640, height: 480, fps: 30}}" \
-    --teleop.type=so101_leader \
-    --teleop.port=/dev/ttyACM1 \
-    --display_data=true
-```
-
-**Tips**: Start without camera first, practice smooth movements, always supervise the robot.
 
 ---
 
