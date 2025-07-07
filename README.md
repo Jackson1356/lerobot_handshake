@@ -121,22 +121,47 @@ pip install -e .
    python -m lerobot.find_cameras opencv
 ```
 
-### 3. Calibrate Your Robots
+### 3. Setup Motors
+
+Before calibration, set unique IDs and baudrates for each motor (only needed once):
+
+```bash
+# Setup follower arm motors
+python -m lerobot.setup_motors \
+    --robot.type=so101_follower \
+    --robot.port=/dev/ttyACM1
+
+# Setup leader arm motors  
+python -m lerobot.setup_motors \
+    --teleop.type=so101_leader \
+    --teleop.port=/dev/ttyACM0
+```
+
+**Motor Setup Process**: Connect each motor individually to the controller board when prompted. The script will automatically assign IDs and set the correct baudrate.
+
+### 4. Calibrate Your Robots
 
 Calibrate both leader and follower arms following the [official SO-101 calibration guide](https://huggingface.co/docs/lerobot/so101#calibrate):
 ```bash
 # Calibrate follower arm
-python lerobot/scripts/control_robot.py calibrate \
+python -m lerobot.calibrate \
     --robot.type=so101_follower \
-    --robot.port=/dev/ttyACM1
+    --robot.port=/dev/ttyACM1 \
+    --robot.id=my_follower_arm
 
 # Calibrate leader arm  
-python lerobot/scripts/control_robot.py calibrate \
-    --robot.type=so101_leader \
-    --robot.port=/dev/ttyACM0
+python -m lerobot.calibrate \
+    --teleop.type=so101_leader \
+    --teleop.port=/dev/ttyACM0 \
+    --teleop.id=my_leader_arm
 ```
 
-### 4. Manual Teleoperation
+**Calibration Process**: The script will guide you to:
+1. Position each arm in the middle of its joint ranges
+2. Move each joint through its full range of motion when prompted
+3. This ensures both arms have matching position values for training
+
+### 5. Manual Teleoperation
 
 Practice controlling your robot before recording datasets.
 
