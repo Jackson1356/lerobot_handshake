@@ -34,7 +34,8 @@ python -m lerobot.record_handshake \
     --dataset.num_episodes=10 \
     --dataset.single_task="Shake hands with person when they extend their hand" \
     --dataset.episode_time_s=30 \      # 30-second recording episodes \
-    --dataset.reset_time_s=15          # 15-second reset time between episodes
+    --dataset.reset_time_s=15 \         # 15-second reset time between episodes \
+    --display_data=true
 ```
 You can use left arrow key to re-record the episode and right arrow key to early exit the recording.
 """

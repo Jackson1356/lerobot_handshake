@@ -214,8 +214,9 @@ python -m lerobot.record_handshake \
     --dataset.repo_id=your_username/handshake_dataset \
     --dataset.num_episodes=10 \
     --dataset.single_task="Shake hands with person when they extend their hand" \
-    --dataset.episode_time_s=30 \      
-    --dataset.reset_time_s=15         
+    --dataset.episode_time_s=30 \
+     --dataset.reset_time_s=15 \
+    --display_data=true      
 ```
 
 ### Recording Process
