@@ -229,7 +229,7 @@ python -m lerobot.record_handshake \
 
 - **⬅️ Left Arrow**: Re-record current episode (if something goes wrong)
 - **➡️ Right Arrow**: End episode early and move to reset phase
-- **⎋ Escape**: Stop entire recording session
+- **✖ Escape**: Stop entire recording session
 
 ---
 

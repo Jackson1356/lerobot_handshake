@@ -359,10 +359,26 @@ def record_handshake(cfg: HandshakeRecordConfig) -> LeRobotDataset:
     
     # Add handshake detection features
     handshake_features = {
-        "observation.handshake_ready": bool,
-        "observation.handshake_confidence": float,
-        "observation.hand_position_x": float,
-        "observation.hand_position_y": float,
+        "observation.handshake_ready": {
+            "dtype": "bool",
+            "shape": (),
+            "names": None,
+        },
+        "observation.handshake_confidence": {
+            "dtype": "float32", 
+            "shape": (),
+            "names": None,
+        },
+        "observation.hand_position_x": {
+            "dtype": "float32",
+            "shape": (),
+            "names": None,
+        },
+        "observation.hand_position_y": {
+            "dtype": "float32",
+            "shape": (),
+            "names": None,
+        },
     }
     
     dataset_features = {**action_features, **obs_features, **handshake_features}
