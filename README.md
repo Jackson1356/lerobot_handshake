@@ -163,7 +163,7 @@ python -m lerobot.calibrate \
 
 ### 5. Manual Teleoperation
 
-Practice controlling your robot before recording datasets.
+Practice controlling your robot before recording datasets. [official teleoperation guide](https://huggingface.co/docs/lerobot/il_robots#teleoperate):
 
 1. Without Camera
 ```bash
