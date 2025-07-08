@@ -140,11 +140,38 @@ def wait_for_handshake_detection(
                 # Reset detection timer if gesture is lost
                 detection_start_time = None
             
-            # Display annotated frame if requested
-            if display_data and 'annotated_frame' in detection_result:
-                cv2.imshow('Handshake Detection', detection_result['annotated_frame'])
-                if cv2.waitKey(1) & 0xFF == ord('q'):
-                    break
+            # Always display data to Rerun during waiting phase (no OpenCV window)
+            # This ensures you can see robot states and pose detection immediately
+            
+            # Add handshake detection data to observation
+            observation["handshake_ready"] = detection_result['ready']
+            observation["handshake_confidence"] = detection_result['confidence']
+            if detection_result['hand_position'] is not None:
+                observation["hand_position_x"] = float(detection_result['hand_position'][0])
+                observation["hand_position_y"] = float(detection_result['hand_position'][1])
+            else:
+                observation["hand_position_x"] = -1.0
+                observation["hand_position_y"] = -1.0
+            
+            # Log to Rerun during waiting phase - everything integrated
+            annotated_frame = detection_result.get('annotated_frame')
+            
+            # Add clear recording status indicator
+            rr.log("status.recording_phase", rr.Scalar(0))  # 0 = waiting
+            rr.log("status.episode_number", rr.Scalar(0))   # No episode yet
+            rr.log("status.time_remaining", rr.Scalar(timeout_s - (time.perf_counter() - start_time)))
+            
+            for obs, val in observation.items():
+                if isinstance(val, float):
+                    rr.log(f"waiting.{obs}", rr.Scalar(val))
+                elif isinstance(val, np.ndarray):
+                    if obs == camera_name and annotated_frame is not None:
+                        # Show pose detection in Rerun viewer
+                        rr.log(f"waiting.{obs}_with_pose", rr.Image(annotated_frame), static=True)
+                        # Also log raw frame for comparison
+                        rr.log(f"waiting.{obs}_raw", rr.Image(val), static=True)
+                    else:
+                        rr.log(f"waiting.{obs}", rr.Image(val), static=True)
             
             time.sleep(0.1)  # Small delay to prevent excessive CPU usage
             
@@ -173,6 +200,7 @@ def record_handshake_loop(
     control_time_s: int | None = None,
     single_task: str | None = None,
     display_data: bool = False,
+    episode_number: int = 0,
 ):
     if dataset is not None and dataset.fps != fps:
         raise ValueError(f"The dataset fps should be equal to requested fps ({dataset.fps} != {fps}).")
@@ -250,6 +278,13 @@ def record_handshake_loop(
                 if 'annotated_frame' in handshake_result:
                     annotated_frame = handshake_result['annotated_frame']
             
+            # Add clear recording status indicators
+            rr.log("status.recording_phase", rr.Scalar(1))  # 1 = recording
+            rr.log("status.episode_number", rr.Scalar(episode_number))
+            rr.log("status.episode_time_elapsed", rr.Scalar(timestamp))
+            rr.log("status.episode_time_remaining", rr.Scalar(max(0, control_time_s - timestamp)))
+            rr.log("status.episode_progress", rr.Scalar(min(1.0, timestamp / control_time_s)))
+            
             # Log observations to Rerun
             for obs, val in observation.items():
                 if isinstance(val, float):
@@ -279,8 +314,9 @@ def record_handshake_loop(
 def record_handshake(cfg: HandshakeRecordConfig) -> LeRobotDataset:
     init_logging()
     logging.info(pformat(asdict(cfg)))
-    if cfg.display_data:
-        _init_rerun(session_name="handshake_recording")
+    
+    # Always initialize Rerun for live monitoring (robot states + pose detection)
+    _init_rerun(session_name="handshake_recording")
 
     robot = make_robot_from_config(cfg.robot)
     teleop = make_teleoperator_from_config(cfg.teleop) if cfg.teleop is not None else None
@@ -366,6 +402,11 @@ def record_handshake(cfg: HandshakeRecordConfig) -> LeRobotDataset:
     if teleop is not None:
         teleop.connect()
 
+    # Initialize status indicators in Rerun
+    rr.log("status.recording_phase", rr.Scalar(0))  # 0 = waiting
+    rr.log("status.episode_number", rr.Scalar(0))   # No episode yet
+    rr.log("status.total_episodes", rr.Scalar(cfg.dataset.num_episodes))
+
     listener, events = init_keyboard_listener()
 
     recorded_episodes = 0
@@ -400,6 +441,7 @@ def record_handshake(cfg: HandshakeRecordConfig) -> LeRobotDataset:
             control_time_s=cfg.dataset.episode_time_s,
             single_task=cfg.dataset.single_task,
             display_data=cfg.display_data,
+            episode_number=dataset.num_episodes + 1,
         )
 
         # Execute a few seconds without recording to give time to manually reset the environment
@@ -408,6 +450,11 @@ def record_handshake(cfg: HandshakeRecordConfig) -> LeRobotDataset:
             (recorded_episodes < cfg.dataset.num_episodes - 1) or events["rerecord_episode"]
         ):
             log_say("Reset the environment for next handshake", cfg.play_sounds)
+            
+            # Add reset phase indicator to Rerun
+            rr.log("status.recording_phase", rr.Scalar(2))  # 2 = resetting
+            rr.log("status.episode_number", rr.Scalar(dataset.num_episodes))
+            
             # Use regular record loop for reset (without handshake detection)
             from lerobot.record import record_loop
             record_loop(
@@ -439,7 +486,7 @@ def record_handshake(cfg: HandshakeRecordConfig) -> LeRobotDataset:
     if not is_headless() and listener is not None:
         listener.stop()
 
-    # Close OpenCV windows (used during handshake detection wait phase)
+    # Close any OpenCV resources (cleanup)
     cv2.destroyAllWindows()
 
     log_say("Exiting", cfg.play_sounds)
