@@ -143,23 +143,24 @@ def wait_for_handshake_detection(
             # Always display clean data to Rerun during waiting phase (no OpenCV window)
             # Only show essential robot arm states (6 joint values) + camera with pose detection
             
-            # Recording Status Chart - separate session
-            rr.log("recording_status/phase", rr.Scalar(0))  # 0 = waiting
-            rr.log("recording_status/episode_number", rr.Scalar(0))   # No episode yet
-            rr.log("recording_status/time_remaining", rr.Scalar(timeout_s - (time.perf_counter() - start_time)))
+            # Log status as text display 
+            status_text = f"WAITING | Episode: 0 | Time remaining: {timeout_s - (time.perf_counter() - start_time):.1f}s"
+            rr.log("status", rr.TextLog(status_text, level=rr.TextLogLevel.INFO))
             
-            # Robot Action States Chart - separate session for 6 joint values
+            # Robot joint positions (6 values only) - like original LeRobot
             annotated_frame = detection_result.get('annotated_frame')
             for obs, val in observation.items():
                 if isinstance(val, float) and obs.endswith('.pos'):
-                    # Only log robot joint positions (6 values) - separate chart
-                    rr.log(f"robot_states/{obs}", rr.Scalar(val))
+                    # Only log robot joint positions (6 values) to main observation chart
+                    rr.log(f"observation.{obs}", rr.Scalar(val))
                 elif isinstance(val, np.ndarray):
                     if obs == camera_name and annotated_frame is not None:
-                        # Show pose detection in Rerun viewer
-                        rr.log(f"waiting.{obs}_with_pose", rr.Image(annotated_frame), static=True)
+                        # Camera with pose detection
+                        rr.log(f"camera_with_pose", rr.Image(annotated_frame), static=True)
+                        # Raw camera  
+                        rr.log(f"camera_raw", rr.Image(val), static=True)
                     else:
-                        rr.log(f"waiting.{obs}", rr.Image(val), static=True)
+                        rr.log(f"camera_raw", rr.Image(val), static=True)
             
             time.sleep(0.1)  # Small delay to prevent excessive CPU usage
             
@@ -259,8 +260,6 @@ def record_handshake_loop(
             dataset.add_frame(frame, task=single_task)
 
         if display_data:
-            # Clean recording display - only essential robot states + pose detection
-            
             # Get pose overlay for camera feed
             annotated_frame = None
             if main_camera_name in observation and handshake_result:
@@ -268,27 +267,25 @@ def record_handshake_loop(
                 if 'annotated_frame' in full_handshake_result:
                     annotated_frame = full_handshake_result['annotated_frame']
             
-            # Recording Status Chart - separate session
-            rr.log("recording_status/phase", rr.Scalar(1))  # 1 = recording
-            rr.log("recording_status/episode_number", rr.Scalar(episode_number))
-            rr.log("recording_status/episode_time_elapsed", rr.Scalar(timestamp))
-            rr.log("recording_status/episode_time_remaining", rr.Scalar(max(0, control_time_s - timestamp)))
-            rr.log("recording_status/episode_progress", rr.Scalar(min(1.0, timestamp / control_time_s)))
+            # Log status as text display
+            status_text = f"RECORDING | Episode: {episode_number} | Elapsed: {timestamp:.1f}s | Remaining: {max(0, control_time_s - timestamp):.1f}s"
+            rr.log("status", rr.TextLog(status_text, level=rr.TextLogLevel.INFO))
             
-            # Robot Action States Chart - separate session for 6 joint values
+            # Robot joint positions (6 values only) - like original LeRobot  
             for obs, val in observation.items():
                 if isinstance(val, float) and obs.endswith('.pos'):
-                    rr.log(f"robot_states/{obs}", rr.Scalar(val))
+                    # Only log robot joint positions (6 values) to main observation chart
+                    rr.log(f"observation.{obs}", rr.Scalar(val))
                 elif isinstance(val, np.ndarray):
                     if obs == main_camera_name and annotated_frame is not None:
-                        rr.log(f"observation.{obs}_with_pose", rr.Image(annotated_frame), static=True)
+                        # Camera with pose detection
+                        rr.log(f"camera_with_pose", rr.Image(annotated_frame), static=True)
+                        # Raw camera
+                        rr.log(f"camera_raw", rr.Image(val), static=True)
                     else:
-                        rr.log(f"observation.{obs}", rr.Image(val), static=True)
+                        rr.log(f"camera_raw", rr.Image(val), static=True)
             
-            # Log clean actions - only robot joint commands (6 values) to robot states chart
-            for act, val in action.items():
-                if isinstance(val, float) and act.endswith('.pos'):
-                    rr.log(f"robot_states/{act}", rr.Scalar(val))
+            # Actions are sent to robot but NOT displayed in charts to keep it clean (6 values only)
 
         dt_s = time.perf_counter() - start_loop_t
         busy_wait(1 / fps - dt_s)
@@ -388,10 +385,7 @@ def record_handshake(cfg: HandshakeRecordConfig) -> LeRobotDataset:
     if teleop is not None:
         teleop.connect()
 
-    # Initialize Recording Status Chart in Rerun - separate session
-    rr.log("recording_status/phase", rr.Scalar(0))  # 0 = waiting
-    rr.log("recording_status/episode_number", rr.Scalar(0))   # No episode yet
-    rr.log("recording_status/total_episodes", rr.Scalar(cfg.dataset.num_episodes))
+    # Status will be shown as text overlay - no separate charts needed
 
     listener, events = init_keyboard_listener()
 
@@ -437,9 +431,7 @@ def record_handshake(cfg: HandshakeRecordConfig) -> LeRobotDataset:
         ):
             log_say("Reset the environment for next handshake", cfg.play_sounds)
             
-            # Add reset phase indicator to Recording Status Chart
-            rr.log("recording_status/phase", rr.Scalar(2))  # 2 = resetting
-            rr.log("recording_status/episode_number", rr.Scalar(dataset.num_episodes))
+            # Reset phase - status will be visible in console logs
             
             # Use regular record loop for reset (without handshake detection)
             from lerobot.record import record_loop
