@@ -168,10 +168,12 @@ def wait_for_handshake_detection(
                         # Raw camera for other cameras
                         rr.log("camera_raw", rr.Image(val), static=True)
             
-            # Log all robot joints as single grouped chart
+            # Log all robot joints as single chart with multiple series
             if robot_joints:
-                for joint_name, joint_val in robot_joints.items():
-                    rr.log(f"robot_joints/{joint_name}", rr.Scalar(joint_val))
+                # Create a single chart with all joint values
+                joint_values = list(robot_joints.values())
+                joint_names = list(robot_joints.keys())
+                rr.log("robot_joints", rr.Scalars(joint_values, names=joint_names))
             
             time.sleep(0.1)  # Small delay to prevent excessive CPU usage
             
@@ -302,10 +304,12 @@ def record_handshake_loop(
                         # Raw camera for other cameras
                         rr.log("camera_raw", rr.Image(val), static=True)
             
-            # Log all robot joints as single grouped chart
+            # Log all robot joints as single chart with multiple series
             if robot_joints:
-                for joint_name, joint_val in robot_joints.items():
-                    rr.log(f"robot_joints/{joint_name}", rr.Scalar(joint_val))
+                # Create a single chart with all joint values
+                joint_values = list(robot_joints.values())
+                joint_names = list(robot_joints.keys())
+                rr.log("robot_joints", rr.Scalars(joint_values, names=joint_names))
             
             # Actions are sent to robot but NOT displayed in charts to keep it clean (6 values only)
 
