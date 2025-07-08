@@ -115,6 +115,7 @@ def wait_for_handshake_detection(
     """
     start_time = time.perf_counter()
     detection_start_time = None
+    last_status_update = 0
     
     log_say("Waiting for person to extend their hand for handshake...", True)
     
@@ -143,9 +144,12 @@ def wait_for_handshake_detection(
             # Always display clean data to Rerun during waiting phase (no OpenCV window)
             # Only show essential robot arm states (6 joint values) + camera with pose detection
             
-            # Log status as text display 
-            status_text = f"WAITING | Episode: 0 | Time remaining: {timeout_s - (time.perf_counter() - start_time):.1f}s"
-            rr.log("status", rr.TextLog(status_text, level=rr.TextLogLevel.INFO))
+            # Update status every second
+            current_time = time.perf_counter()
+            if current_time - last_status_update >= 1.0:
+                status_text = f"WAITING | Episode: 0 | Time remaining: {timeout_s - (current_time - start_time):.1f}s"
+                rr.log("status", rr.TextLog(status_text, level=rr.TextLogLevel.INFO))
+                last_status_update = current_time
             
             # Robot joint positions (6 values only) - like original LeRobot
             annotated_frame = detection_result.get('annotated_frame')
@@ -155,11 +159,12 @@ def wait_for_handshake_detection(
                     rr.log(f"observation.{obs}", rr.Scalar(val))
                 elif isinstance(val, np.ndarray):
                     if obs == camera_name and annotated_frame is not None:
-                        # Camera with pose detection
+                        # Camera with pose detection - consistent path
                         rr.log(f"camera_with_pose", rr.Image(annotated_frame), static=True)
-                        # Raw camera  
+                        # Raw camera - consistent path
                         rr.log(f"camera_raw", rr.Image(val), static=True)
                     else:
+                        # Raw camera for other cameras
                         rr.log(f"camera_raw", rr.Image(val), static=True)
             
             time.sleep(0.1)  # Small delay to prevent excessive CPU usage
@@ -200,6 +205,7 @@ def record_handshake_loop(
 
     timestamp = 0
     start_episode_t = time.perf_counter()
+    last_status_update = 0
     
     while timestamp < control_time_s:
         start_loop_t = time.perf_counter()
@@ -267,9 +273,12 @@ def record_handshake_loop(
                 if 'annotated_frame' in full_handshake_result:
                     annotated_frame = full_handshake_result['annotated_frame']
             
-            # Log status as text display
-            status_text = f"RECORDING | Episode: {episode_number} | Elapsed: {timestamp:.1f}s | Remaining: {max(0, control_time_s - timestamp):.1f}s"
-            rr.log("status", rr.TextLog(status_text, level=rr.TextLogLevel.INFO))
+            # Update status every second 
+            current_time = time.perf_counter()
+            if current_time - last_status_update >= 1.0:
+                status_text = f"RECORDING | Episode: {episode_number} | Elapsed: {timestamp:.1f}s | Remaining: {max(0, control_time_s - timestamp):.1f}s"
+                rr.log("status", rr.TextLog(status_text, level=rr.TextLogLevel.INFO))
+                last_status_update = current_time
             
             # Robot joint positions (6 values only) - like original LeRobot  
             for obs, val in observation.items():
@@ -278,11 +287,12 @@ def record_handshake_loop(
                     rr.log(f"observation.{obs}", rr.Scalar(val))
                 elif isinstance(val, np.ndarray):
                     if obs == main_camera_name and annotated_frame is not None:
-                        # Camera with pose detection
+                        # Camera with pose detection - consistent path
                         rr.log(f"camera_with_pose", rr.Image(annotated_frame), static=True)
-                        # Raw camera
+                        # Raw camera - consistent path
                         rr.log(f"camera_raw", rr.Image(val), static=True)
                     else:
+                        # Raw camera for other cameras
                         rr.log(f"camera_raw", rr.Image(val), static=True)
             
             # Actions are sent to robot but NOT displayed in charts to keep it clean (6 values only)
