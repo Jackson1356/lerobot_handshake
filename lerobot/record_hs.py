@@ -170,16 +170,26 @@ def wait_for_handshake_detection(
                         # Raw camera for other cameras
                         rr.log("camera_raw", rr.Image(val), static=True)
             
-            # Log all robot joints as individual scalars with grouped path
+            # Log all robot joints - try individual logs first to debug
             print(f"DEBUG WAITING: robot_joints dict: {robot_joints}")
             if robot_joints:
+                # Try logging each joint individually first
                 for joint_name, joint_val in robot_joints.items():
-                    # Clean up joint name for display
-                    clean_name = joint_name.replace('action.', '').replace('observation.', '')
-                    print(f"DEBUG WAITING: Logging joint {clean_name} = {joint_val}")
-                    rr.log(f"robot_joints/{clean_name}", rr.Scalar(joint_val))
+                    print(f"DEBUG WAITING: Logging individual joint {joint_name} = {joint_val}")
+                    rr.log(f"robot_joints/{joint_name}", rr.Scalar(joint_val))
+                    
+                # Also try the grouped approach
+                joint_values = list(robot_joints.values())
+                joint_names = list(robot_joints.keys())
+                print(f"DEBUG WAITING: Also trying grouped logging with {len(joint_values)} joints")
+                try:
+                    rr.log("robot_joints_grouped", rr.Scalars(joint_values, names=joint_names))
+                except Exception as e:
+                    print(f"DEBUG WAITING: Grouped logging failed: {e}")
             else:
                 print("DEBUG WAITING: No robot joints found to log!")
+                # Log a test value to see if rerun works at all
+                rr.log("robot_joints_test", rr.Scalar(1.0))
             
             time.sleep(0.1)  # Small delay to prevent excessive CPU usage
             
@@ -312,16 +322,26 @@ def record_handshake_loop(
                         # Raw camera for other cameras
                         rr.log("camera_raw", rr.Image(val), static=True)
             
-            # Log all robot joints as individual scalars with grouped path
+            # Log all robot joints - try individual logs first to debug  
             print(f"DEBUG RECORDING: robot_joints dict: {robot_joints}")
             if robot_joints:
+                # Try logging each joint individually first
                 for joint_name, joint_val in robot_joints.items():
-                    # Clean up joint name for display
-                    clean_name = joint_name.replace('action.', '').replace('observation.', '')
-                    print(f"DEBUG RECORDING: Logging joint {clean_name} = {joint_val}")
-                    rr.log(f"robot_joints/{clean_name}", rr.Scalar(joint_val))
+                    print(f"DEBUG RECORDING: Logging individual joint {joint_name} = {joint_val}")
+                    rr.log(f"robot_joints/{joint_name}", rr.Scalar(joint_val))
+                    
+                # Also try the grouped approach
+                joint_values = list(robot_joints.values())
+                joint_names = list(robot_joints.keys())
+                print(f"DEBUG RECORDING: Also trying grouped logging with {len(joint_values)} joints")
+                try:
+                    rr.log("robot_joints_grouped", rr.Scalars(joint_values, names=joint_names))
+                except Exception as e:
+                    print(f"DEBUG RECORDING: Grouped logging failed: {e}")
             else:
                 print("DEBUG RECORDING: No robot joints found to log!")
+                # Log a test value to see if rerun works at all
+                rr.log("robot_joints_test", rr.Scalar(2.0))
             
             # Actions are sent to robot but NOT displayed in charts to keep it clean (6 values only)
 
