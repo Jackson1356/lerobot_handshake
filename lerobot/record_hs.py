@@ -170,14 +170,14 @@ def wait_for_handshake_detection(
                         # Raw camera for other cameras
                         rr.log("camera_raw", rr.Image(val), static=True)
             
-            # Log all robot joints as single chart with multiple series
+            # Log all robot joints as individual scalars with grouped path
             print(f"DEBUG WAITING: robot_joints dict: {robot_joints}")
             if robot_joints:
-                # Create a single chart with all joint values
-                joint_values = list(robot_joints.values())
-                joint_names = list(robot_joints.keys())
-                print(f"DEBUG WAITING: Logging {len(joint_values)} joints: {joint_names} = {joint_values}")
-                rr.log("robot_joints", rr.Scalars(joint_values, names=joint_names))
+                for joint_name, joint_val in robot_joints.items():
+                    # Clean up joint name for display
+                    clean_name = joint_name.replace('action.', '').replace('observation.', '')
+                    print(f"DEBUG WAITING: Logging joint {clean_name} = {joint_val}")
+                    rr.log(f"robot_joints/{clean_name}", rr.Scalar(joint_val))
             else:
                 print("DEBUG WAITING: No robot joints found to log!")
             
@@ -312,14 +312,14 @@ def record_handshake_loop(
                         # Raw camera for other cameras
                         rr.log("camera_raw", rr.Image(val), static=True)
             
-            # Log all robot joints as single chart with multiple series
+            # Log all robot joints as individual scalars with grouped path
             print(f"DEBUG RECORDING: robot_joints dict: {robot_joints}")
             if robot_joints:
-                # Create a single chart with all joint values
-                joint_values = list(robot_joints.values())
-                joint_names = list(robot_joints.keys())
-                print(f"DEBUG RECORDING: Logging {len(joint_values)} joints: {joint_names} = {joint_values}")
-                rr.log("robot_joints", rr.Scalars(joint_values, names=joint_names))
+                for joint_name, joint_val in robot_joints.items():
+                    # Clean up joint name for display
+                    clean_name = joint_name.replace('action.', '').replace('observation.', '')
+                    print(f"DEBUG RECORDING: Logging joint {clean_name} = {joint_val}")
+                    rr.log(f"robot_joints/{clean_name}", rr.Scalar(joint_val))
             else:
                 print("DEBUG RECORDING: No robot joints found to log!")
             
