@@ -106,6 +106,7 @@ def wait_for_handshake_detection(
     confidence_threshold: float,
     detection_delay: float,
     display_data: bool = False,
+    teleop: Teleoperator | None = None,
 ) -> bool:
     """
     Wait for handshake detection from the person.
@@ -124,6 +125,11 @@ def wait_for_handshake_detection(
             observation = robot.get_observation()
                 
             frame = observation[camera_name]
+            
+            # Process teleop commands during waiting (so user can position robot)
+            if teleop is not None:
+                action = teleop.get_action()
+                robot.send_action(action)
             
             # Detect handshake gesture
             detection_result = handshake_detector.detect_handshake_gesture(frame, visualize=True)
@@ -168,14 +174,11 @@ def wait_for_handshake_detection(
                         # Raw camera for other cameras
                         rr.log("camera_raw", rr.Image(val), static=True)
             
-            # Log robot joints efficiently
+            # Log all robot joints as single chart
             if robot_joints:
-                # Log each joint individually for now (working solution)
+                # Log each joint individually to create clean grouped chart
                 for joint_name, joint_val in robot_joints.items():
                     rr.log(f"robot_joints/{joint_name}", rr.Scalar(joint_val))
-            else:
-                # Fallback test value if no joints found
-                rr.log("robot_joints_test", rr.Scalar(1.0))
             
             time.sleep(0.1)  # Small delay to prevent excessive CPU usage
             
@@ -224,62 +227,53 @@ def record_handshake_loop(
             events["exit_early"] = False
             break
 
-        # TELEOP MODE: Ultra-simple like teleoperate.py
-        if policy is None and teleop is not None:
-            action = teleop.get_action()
-            sent_action = robot.send_action(action)
-            
-            # Minimal observation for display only - no handshake detection
-            observation = robot.get_observation()
-            
-            # Add dummy handshake data for dataset compatibility
-            observation["handshake_ready"] = False
-            observation["handshake_confidence"] = 0.0
-            observation["hand_position_x"] = -1.0
-            observation["hand_position_y"] = -1.0
-            
-        else:
-            # POLICY MODE: Full processing
-            observation = robot.get_observation()
-            
-            if policy is not None:
-                # Run handshake detection for dataset recording only
-                handshake_result = None
-                if main_camera_name in observation:
-                    frame = observation[main_camera_name]
-                    handshake_result = handshake_detector.detect_handshake_gesture(frame, visualize=False)
-                    
-                    # Add handshake detection data to observation for dataset recording
-                    observation["handshake_ready"] = handshake_result['ready']
-                    observation["handshake_confidence"] = handshake_result['confidence']
-                    if handshake_result['hand_position'] is not None:
-                        observation["hand_position_x"] = float(handshake_result['hand_position'][0])
-                        observation["hand_position_y"] = float(handshake_result['hand_position'][1])
-                    else:
-                        observation["hand_position_x"] = -1.0
-                        observation["hand_position_y"] = -1.0
+        observation = robot.get_observation()
 
-                observation_frame = build_dataset_frame(dataset.features, observation, prefix="observation")
-                action_values = predict_action(
-                    observation_frame,
-                    policy,
-                    get_safe_torch_device(policy.config.device),
-                    policy.config.use_amp,
-                    task=single_task,
-                    robot_type=robot.robot_type,
-                )
-                action = {key: action_values[i].item() for i, key in enumerate(robot.action_features)}
-                sent_action = robot.send_action(action)
+        # Run handshake detection for dataset recording and pose overlay
+        handshake_result = None
+        if main_camera_name in observation:
+            frame = observation[main_camera_name]
+            handshake_result = handshake_detector.detect_handshake_gesture(frame, visualize=False)
+            
+            # Add handshake detection data to observation for dataset recording
+            # (but filter out from Rerun display to keep it clean)
+            observation["handshake_ready"] = handshake_result['ready']
+            observation["handshake_confidence"] = handshake_result['confidence']
+            if handshake_result['hand_position'] is not None:
+                observation["hand_position_x"] = float(handshake_result['hand_position'][0])
+                observation["hand_position_y"] = float(handshake_result['hand_position'][1])
             else:
-                logging.info(
-                    "No policy or teleoperator provided, skipping action generation."
-                    "This is likely to happen when resetting the environment without a teleop device."
-                    "The robot won't be at its rest position at the start of the next episode."
-                )
-                continue
+                observation["hand_position_x"] = -1.0
+                observation["hand_position_y"] = -1.0
+
+        if policy is not None or dataset is not None:
+            observation_frame = build_dataset_frame(dataset.features, observation, prefix="observation")
+
+        if policy is not None:
+            action_values = predict_action(
+                observation_frame,
+                policy,
+                get_safe_torch_device(policy.config.device),
+                policy.config.use_amp,
+                task=single_task,
+                robot_type=robot.robot_type,
+            )
+            action = {key: action_values[i].item() for i, key in enumerate(robot.action_features)}
+        elif policy is None and teleop is not None:
+            action = teleop.get_action()
+        else:
+            logging.info(
+                "No policy or teleoperator provided, skipping action generation."
+                "This is likely to happen when resetting the environment without a teleop device."
+                "The robot won't be at its rest position at the start of the next episode."
+            )
+            continue
+
+        # Action can eventually be clipped using `max_relative_target`,
+        # so action actually sent is saved in the dataset.
+        sent_action = robot.send_action(action)
 
         if dataset is not None:
-            observation_frame = build_dataset_frame(dataset.features, observation, prefix="observation")
             action_frame = build_dataset_frame(dataset.features, sent_action, prefix="action")
             frame = {**observation_frame, **action_frame}
             dataset.add_frame(frame, task=single_task)
@@ -315,14 +309,11 @@ def record_handshake_loop(
                         # Raw camera for other cameras
                         rr.log("camera_raw", rr.Image(val), static=True)
             
-            # Log robot joints efficiently
+            # Log all robot joints as single chart
             if robot_joints:
-                # Log each joint individually for now (working solution)
+                # Log each joint individually to create clean grouped chart
                 for joint_name, joint_val in robot_joints.items():
                     rr.log(f"robot_joints/{joint_name}", rr.Scalar(joint_val))
-            else:
-                # Fallback test value if no joints found
-                rr.log("robot_joints_test", rr.Scalar(2.0))
             
             # Actions are sent to robot but NOT displayed in charts to keep it clean (6 values only)
 
@@ -432,25 +423,21 @@ def record_handshake(cfg: HandshakeRecordConfig) -> LeRobotDataset:
     while recorded_episodes < cfg.dataset.num_episodes and not events["stop_recording"]:
         log_say(f"Preparing to record handshake episode {dataset.num_episodes + 1}", cfg.play_sounds)
         
-        # Wait for handshake detection before starting episode (skip if teleop only)
-        if policy is not None:
-            # Only do handshake detection when using a policy
-            handshake_detected = wait_for_handshake_detection(
-                robot=robot,
-                handshake_detector=handshake_detector,
-                camera_name=main_camera_name,
-                timeout_s=cfg.dataset.handshake_timeout_s,
-                confidence_threshold=cfg.dataset.handshake_confidence_threshold,
-                detection_delay=cfg.dataset.handshake_detection_delay,
-                display_data=cfg.display_data,
-            )
-            
-            if not handshake_detected:
-                log_say("Skipping episode due to handshake detection timeout", cfg.play_sounds)
-                continue
-        else:
-            # Teleop mode: skip handshake detection, start recording immediately
-            log_say("Teleop mode: Starting recording immediately (no handshake detection)", cfg.play_sounds)
+        # Wait for handshake detection before starting episode
+        handshake_detected = wait_for_handshake_detection(
+            robot=robot,
+            handshake_detector=handshake_detector,
+            camera_name=main_camera_name,
+            timeout_s=cfg.dataset.handshake_timeout_s,
+            confidence_threshold=cfg.dataset.handshake_confidence_threshold,
+            detection_delay=cfg.dataset.handshake_detection_delay,
+            display_data=cfg.display_data,
+            teleop=teleop,  # Enable teleop during waiting phase
+        )
+        
+        if not handshake_detected:
+            log_say("Skipping episode due to handshake detection timeout", cfg.play_sounds)
+            continue
         
         log_say(f"Recording handshake episode {dataset.num_episodes + 1}", cfg.play_sounds)
         record_handshake_loop(
