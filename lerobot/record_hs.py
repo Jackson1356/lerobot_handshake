@@ -48,6 +48,78 @@ from lerobot.common.utils.visualization_utils import _init_rerun
 from lerobot.configs import parser
 from lerobot.configs.policies import PreTrainedConfig
 
+
+def find_working_camera_index(max_index: int = 3) -> int:
+    """
+    Find a working camera index by testing multiple indices.
+    
+    Args:
+        max_index: Maximum camera index to test
+        
+    Returns:
+        Working camera index, or raises ValueError if none found
+    """
+    logging.info("🔍 Searching for working camera...")
+    
+    for i in range(max_index):
+        try:
+            cap = cv2.VideoCapture(i)
+            if cap.isOpened():
+                ret, frame = cap.read()
+                if ret and frame is not None:
+                    height, width = frame.shape[:2]
+                    logging.info(f"✅ Found working camera at index {i} ({width}x{height})")
+                    cap.release()
+                    return i
+            cap.release()
+        except Exception as e:
+            logging.debug(f"Camera index {i} failed: {e}")
+    
+    raise ValueError(f"❌ No working camera found in indices 0-{max_index-1}")
+
+
+def update_camera_config_with_working_index(robot_config: RobotConfig) -> RobotConfig:
+    """
+    Update robot camera configuration with a working camera index.
+    
+    Args:
+        robot_config: Robot configuration with camera settings
+        
+    Returns:
+        Updated robot configuration with working camera index
+    """
+    if not hasattr(robot_config, 'cameras') or not robot_config.cameras:
+        return robot_config
+    
+    # Find working camera
+    try:
+        working_index = find_working_camera_index()
+    except ValueError as e:
+        logging.error(str(e))
+        raise
+    
+    # Update all OpenCV camera configs with working index
+    updated_cameras = {}
+    for cam_name, cam_config in robot_config.cameras.items():
+        if hasattr(cam_config, 'type') and cam_config.type == "opencv":
+            # Create new config with working index
+            new_config = OpenCVCameraConfig(
+                type="opencv",
+                index_or_path=working_index,
+                width=cam_config.width,
+                height=cam_config.height,
+                fps=cam_config.fps,
+            )
+            updated_cameras[cam_name] = new_config
+            logging.info(f"📷 Updated camera '{cam_name}' to use index {working_index}")
+        else:
+            updated_cameras[cam_name] = cam_config
+    
+    # Update robot config
+    robot_config.cameras = updated_cameras
+    return robot_config
+
+
 @dataclass
 class HandshakeDatasetRecordConfig:
     repo_id: str
@@ -141,37 +213,22 @@ def wait_for_handshake_detection(
                 detection_start_time = None
             
             # Always display data to Rerun during waiting phase (no OpenCV window)
-            # This ensures you can see robot states and pose detection immediately
+            # Clean interface: only essential robot states + pose detection
             
-            # Add handshake detection data to observation
-            observation["handshake_ready"] = detection_result['ready']
-            observation["handshake_confidence"] = detection_result['confidence']
-            if detection_result['hand_position'] is not None:
-                observation["hand_position_x"] = float(detection_result['hand_position'][0])
-                observation["hand_position_y"] = float(detection_result['hand_position'][1])
-            else:
-                observation["hand_position_x"] = -1.0
-                observation["hand_position_y"] = -1.0
-            
-            # Log to Rerun during waiting phase - everything integrated
-            annotated_frame = detection_result.get('annotated_frame')
-            
-            # Add clear recording status indicator
+            # Status indicators
             rr.log("status.recording_phase", rr.Scalar(0))  # 0 = waiting
-            rr.log("status.episode_number", rr.Scalar(0))   # No episode yet
+            rr.log("status.handshake_confidence", rr.Scalar(detection_result['confidence']))
             rr.log("status.time_remaining", rr.Scalar(timeout_s - (time.perf_counter() - start_time)))
             
+            # Robot joint states only (6 values)
             for obs, val in observation.items():
-                if isinstance(val, float):
+                if isinstance(val, float) and obs.endswith('.pos'):
                     rr.log(f"waiting.{obs}", rr.Scalar(val))
-                elif isinstance(val, np.ndarray):
-                    if obs == camera_name and annotated_frame is not None:
-                        # Show pose detection in Rerun viewer
+                elif isinstance(val, np.ndarray) and obs == camera_name:
+                    # Show pose detection camera feed
+                    annotated_frame = detection_result.get('annotated_frame')
+                    if annotated_frame is not None:
                         rr.log(f"waiting.{obs}_with_pose", rr.Image(annotated_frame), static=True)
-                        # Also log raw frame for comparison
-                        rr.log(f"waiting.{obs}_raw", rr.Image(val), static=True)
-                    else:
-                        rr.log(f"waiting.{obs}", rr.Image(val), static=True)
             
             time.sleep(0.1)  # Small delay to prevent excessive CPU usage
             
@@ -269,37 +326,25 @@ def record_handshake_loop(
             dataset.add_frame(frame, task=single_task)
 
         if display_data:
-            # Integrate pose detection visualization into Rerun viewer
-            # (replaces separate OpenCV window with annotated camera feed)
-            annotated_frame = None
-            if main_camera_name in observation:
-                frame = observation[main_camera_name]
-                handshake_result = handshake_detector.detect_handshake_gesture(frame, visualize=True)
-                if 'annotated_frame' in handshake_result:
-                    annotated_frame = handshake_result['annotated_frame']
+            # Clean recording interface: essential robot states + pose detection
             
-            # Add clear recording status indicators
+            # Status indicators
             rr.log("status.recording_phase", rr.Scalar(1))  # 1 = recording
             rr.log("status.episode_number", rr.Scalar(episode_number))
-            rr.log("status.episode_time_elapsed", rr.Scalar(timestamp))
-            rr.log("status.episode_time_remaining", rr.Scalar(max(0, control_time_s - timestamp)))
             rr.log("status.episode_progress", rr.Scalar(min(1.0, timestamp / control_time_s)))
             
-            # Log observations to Rerun
+            # Robot joint states only (6 values)
             for obs, val in observation.items():
-                if isinstance(val, float):
+                if isinstance(val, float) and obs.endswith('.pos'):
                     rr.log(f"observation.{obs}", rr.Scalar(val))
-                elif isinstance(val, np.ndarray):
-                    # Replace main camera feed with annotated pose detection frame
-                    if obs == main_camera_name and annotated_frame is not None:
-                        rr.log(f"observation.{obs}_with_pose", rr.Image(annotated_frame), static=True)
-                        # Uncomment below to also show raw camera feed for comparison
-                        # rr.log(f"observation.{obs}_raw", rr.Image(val), static=True)
-                    else:
-                        # Log other cameras normally
-                        rr.log(f"observation.{obs}", rr.Image(val), static=True)
+                elif isinstance(val, np.ndarray) and obs == main_camera_name:
+                    # Show pose detection camera feed
+                    frame = observation[main_camera_name]
+                    handshake_result = handshake_detector.detect_handshake_gesture(frame, visualize=True)
+                    if 'annotated_frame' in handshake_result:
+                        rr.log(f"observation.{obs}_with_pose", rr.Image(handshake_result['annotated_frame']), static=True)
             
-            # Log actions to Rerun
+            # Robot actions (6 values)
             for act, val in action.items():
                 if isinstance(val, float):
                     rr.log(f"action.{act}", rr.Scalar(val))
@@ -317,6 +362,14 @@ def record_handshake(cfg: HandshakeRecordConfig) -> LeRobotDataset:
     
     # Always initialize Rerun for live monitoring (robot states + pose detection)
     _init_rerun(session_name="handshake_recording")
+
+    # Robust camera detection: automatically find working camera index
+    try:
+        cfg.robot = update_camera_config_with_working_index(cfg.robot)
+    except ValueError as e:
+        logging.error(f"Camera detection failed: {e}")
+        logging.error("Please check your camera connections and try again.")
+        raise
 
     robot = make_robot_from_config(cfg.robot)
     teleop = make_teleoperator_from_config(cfg.teleop) if cfg.teleop is not None else None
@@ -404,8 +457,6 @@ def record_handshake(cfg: HandshakeRecordConfig) -> LeRobotDataset:
 
     # Initialize status indicators in Rerun
     rr.log("status.recording_phase", rr.Scalar(0))  # 0 = waiting
-    rr.log("status.episode_number", rr.Scalar(0))   # No episode yet
-    rr.log("status.total_episodes", rr.Scalar(cfg.dataset.num_episodes))
 
     listener, events = init_keyboard_listener()
 
@@ -453,7 +504,6 @@ def record_handshake(cfg: HandshakeRecordConfig) -> LeRobotDataset:
             
             # Add reset phase indicator to Rerun
             rr.log("status.recording_phase", rr.Scalar(2))  # 2 = resetting
-            rr.log("status.episode_number", rr.Scalar(dataset.num_episodes))
             
             # Use regular record loop for reset (without handshake detection)
             from lerobot.record import record_loop
