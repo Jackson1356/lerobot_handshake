@@ -215,14 +215,14 @@ def wait_for_handshake_detection(
             # Clean interface: only essential robot states + pose detection
             
             # Status indicators (separate section)
-            rr.log("status.recording_phase", rr.Scalar(0))  # 0 = waiting
-            rr.log("status.handshake_confidence", rr.Scalar(detection_result['confidence']))
-            rr.log("status.time_remaining", rr.Scalar(timeout_s - (time.perf_counter() - start_time)))
+            rr.log("status.recording_phase", rr.Scalars([0]))  # 0 = waiting
+            rr.log("status.handshake_confidence", rr.Scalars([detection_result['confidence']]))
+            rr.log("status.time_remaining", rr.Scalars([timeout_s - (time.perf_counter() - start_time)]))
             
             # Robot joint states only (6 values in clean section)
             for obs, val in observation.items():
                 if isinstance(val, float) and obs.endswith('.pos'):
-                    rr.log(f"robot.{obs}", rr.Scalar(val))  # Clean robot namespace
+                    rr.log(f"robot.{obs}", rr.Scalars([val]))  # Clean robot namespace
                 elif isinstance(val, np.ndarray) and obs == camera_name:
                     # Camera feed (separate section)
                     annotated_frame = detection_result.get('annotated_frame')
@@ -328,14 +328,14 @@ def record_handshake_loop(
             # Clean recording interface: essential robot states + pose detection
             
             # Status indicators (separate section)
-            rr.log("status.recording_phase", rr.Scalar(1))  # 1 = recording
-            rr.log("status.episode_number", rr.Scalar(episode_number))
-            rr.log("status.episode_progress", rr.Scalar(min(1.0, timestamp / control_time_s)))
+            rr.log("status.recording_phase", rr.Scalars([1]))  # 1 = recording
+            rr.log("status.episode_number", rr.Scalars([episode_number]))
+            rr.log("status.episode_progress", rr.Scalars([min(1.0, timestamp / control_time_s)]))
             
             # Robot joint states only (6 values in clean section)
             for obs, val in observation.items():
                 if isinstance(val, float) and obs.endswith('.pos'):
-                    rr.log(f"robot.{obs}", rr.Scalar(val))  # Clean robot namespace
+                    rr.log(f"robot.{obs}", rr.Scalars([val]))  # Clean robot namespace
                 elif isinstance(val, np.ndarray) and obs == main_camera_name:
                     # Camera feed (separate section)
                     frame = observation[main_camera_name]
@@ -346,7 +346,7 @@ def record_handshake_loop(
             # Robot actions (6 values in clean section)
             for act, val in action.items():
                 if isinstance(val, float):
-                    rr.log(f"robot_action.{act}", rr.Scalar(val))  # Clean action namespace
+                    rr.log(f"robot_action.{act}", rr.Scalars([val]))  # Clean action namespace
 
         dt_s = time.perf_counter() - start_loop_t
         busy_wait(1 / fps - dt_s)
@@ -455,7 +455,7 @@ def record_handshake(cfg: HandshakeRecordConfig) -> LeRobotDataset:
         teleop.connect()
 
     # Initialize status indicators in Rerun
-    rr.log("status.recording_phase", rr.Scalar(0))  # 0 = waiting
+    rr.log("status.recording_phase", rr.Scalars([0]))  # 0 = waiting
 
     listener, events = init_keyboard_listener()
 
@@ -502,7 +502,7 @@ def record_handshake(cfg: HandshakeRecordConfig) -> LeRobotDataset:
             log_say("Reset the environment for next handshake", cfg.play_sounds)
             
             # Add reset phase indicator to Rerun
-            rr.log("status.recording_phase", rr.Scalar(2))  # 2 = resetting
+            rr.log("status.recording_phase", rr.Scalars([2]))  # 2 = resetting
             
             # Use regular record loop for reset (without handshake detection)
             from lerobot.record import record_loop
