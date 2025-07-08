@@ -195,6 +195,24 @@ python -m lerobot.teleoperate \
 
 ---
 
+## 🔍 Test Handshake Detection
+
+Before recording datasets, test that handshake detection works with your camera:
+
+```bash
+# Basic usage
+python -m lerobot.test_handshake
+
+# Specify camera and confidence threshold
+python -m lerobot.test_handshake \
+    --camera_id=0 \
+    --confidence_threshold=0.8
+```
+
+This opens your camera and shows live handshake detection. Press `q` to quit.
+
+---
+
 ## 🎥 Recording Handshake Datasets
 
 Use the specialized `record_handshake.py` script to collect demonstration data:
@@ -313,6 +331,7 @@ python -m lerobot.scripts.eval \
 lerobot_handshake/
 ├── lerobot/
 │   ├── record_handshake.py         # 🎬 Custom recording script for handshake data
+│   ├── test_handshake.py           # 🔍 Test handshake detection with camera
 │   ├── scripts/
 │   │   └── train_handshake.py      # 🎓 Custom training script with handshake metrics
 │   └── common/
@@ -383,7 +402,13 @@ python lerobot/scripts/control_robot.py connect --robot.type=so101_follower --ro
 
 **Handshake detection not working:**
 ```bash
-# Test detection algorithm
+# Test handshake detection
+python -m lerobot.test_handshake
+
+# Try with lower confidence threshold
+python -m lerobot.test_handshake --confidence_threshold=0.6
+
+# Test original detection algorithm
 python pose_detection/test_handshake_detection_improved.py
 ```
 
