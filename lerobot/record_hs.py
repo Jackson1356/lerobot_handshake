@@ -238,16 +238,61 @@ def record_handshake_loop(
             events["exit_early"] = False
             break
 
-        observation = robot.get_observation()
+        # Get teleop action FIRST for responsive control (like teleoperate.py)
+        if policy is None and teleop is not None:
+            action = teleop.get_action()
+            # Send action immediately for responsive control
+            sent_action = robot.send_action(action)
+        else:
+            # For policy mode, we need observation first
+            observation = robot.get_observation()
+            
+            if policy is not None:
+                # Run handshake detection for dataset recording only
+                handshake_result = None
+                if main_camera_name in observation:
+                    frame = observation[main_camera_name]
+                    handshake_result = handshake_detector.detect_handshake_gesture(frame, visualize=False)
+                    
+                    # Add handshake detection data to observation for dataset recording
+                    observation["handshake_ready"] = handshake_result['ready']
+                    observation["handshake_confidence"] = handshake_result['confidence']
+                    if handshake_result['hand_position'] is not None:
+                        observation["hand_position_x"] = float(handshake_result['hand_position'][0])
+                        observation["hand_position_y"] = float(handshake_result['hand_position'][1])
+                    else:
+                        observation["hand_position_x"] = -1.0
+                        observation["hand_position_y"] = -1.0
 
-        # Run handshake detection for dataset recording and pose overlay
+                observation_frame = build_dataset_frame(dataset.features, observation, prefix="observation")
+                action_values = predict_action(
+                    observation_frame,
+                    policy,
+                    get_safe_torch_device(policy.config.device),
+                    policy.config.use_amp,
+                    task=single_task,
+                    robot_type=robot.robot_type,
+                )
+                action = {key: action_values[i].item() for i, key in enumerate(robot.action_features)}
+                sent_action = robot.send_action(action)
+            else:
+                logging.info(
+                    "No policy or teleoperator provided, skipping action generation."
+                    "This is likely to happen when resetting the environment without a teleop device."
+                    "The robot won't be at its rest position at the start of the next episode."
+                )
+                continue
+
+        # Get observation for display and dataset recording (after action is sent)
+        observation = robot.get_observation()
+        
+        # Run handshake detection for display purposes
         handshake_result = None
         if main_camera_name in observation:
             frame = observation[main_camera_name]
             handshake_result = handshake_detector.detect_handshake_gesture(frame, visualize=False)
             
             # Add handshake detection data to observation for dataset recording
-            # (but filter out from Rerun display to keep it clean)
             observation["handshake_ready"] = handshake_result['ready']
             observation["handshake_confidence"] = handshake_result['confidence']
             if handshake_result['hand_position'] is not None:
@@ -257,34 +302,8 @@ def record_handshake_loop(
                 observation["hand_position_x"] = -1.0
                 observation["hand_position_y"] = -1.0
 
-        if policy is not None or dataset is not None:
-            observation_frame = build_dataset_frame(dataset.features, observation, prefix="observation")
-
-        if policy is not None:
-            action_values = predict_action(
-                observation_frame,
-                policy,
-                get_safe_torch_device(policy.config.device),
-                policy.config.use_amp,
-                task=single_task,
-                robot_type=robot.robot_type,
-            )
-            action = {key: action_values[i].item() for i, key in enumerate(robot.action_features)}
-        elif policy is None and teleop is not None:
-            action = teleop.get_action()
-        else:
-            logging.info(
-                "No policy or teleoperator provided, skipping action generation."
-                "This is likely to happen when resetting the environment without a teleop device."
-                "The robot won't be at its rest position at the start of the next episode."
-            )
-            continue
-
-        # Action can eventually be clipped using `max_relative_target`,
-        # so action actually sent is saved in the dataset.
-        sent_action = robot.send_action(action)
-
         if dataset is not None:
+            observation_frame = build_dataset_frame(dataset.features, observation, prefix="observation")
             action_frame = build_dataset_frame(dataset.features, sent_action, prefix="action")
             frame = {**observation_frame, **action_frame}
             dataset.add_frame(frame, task=single_task)
