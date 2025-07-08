@@ -184,7 +184,7 @@ python -m lerobot.teleoperate \
     --robot.type=so101_follower \
     --robot.port=/dev/ttyACM1 \
     --robot.id=my_follower_arm \
-    --robot.cameras='{"front": {"type": "opencv", "index_or_path": 0, "width": 640, "height": 480, "fps": 30}}' \
+    --robot.cameras='{"front": {"type": "opencv", "index_or_path": /dev/video1, "width": 640, "height": 480, "fps": 30}}' \
     --teleop.type=so101_leader \
     --teleop.port=/dev/ttyACM0 \
     --teleop.id=my_leader_arm \
@@ -207,7 +207,7 @@ python -m lerobot.record_handshake \
     --teleop.type=so101_leader \
     --teleop.port=/dev/ttyACM0 \
     --teleop.id=my_leader_arm \
-    --robot.cameras='{"front": {"type": "opencv", "index_or_path": 0, "width": 640, "height": 480, "fps": 30}}' \
+    --robot.cameras='{"front": {"type": "opencv", "index_or_path": /dev/video1, "width": 640, "height": 480, "fps": 30}}' \
     --dataset.repo_id=your_username/handshake_dataset \
     --dataset.num_episodes=10 \
     --dataset.single_task="Shake hands with person when they extend their hand" \
@@ -301,7 +301,7 @@ python -m lerobot.scripts.eval \
     --policy.name=handshake_policy_v1 \
     --robot.type=so101_follower \
     --robot.port=/dev/ttyACM0 \
-    --robot.cameras='{"front": {"type": "opencv", "index_or_path": 0, "width": 640, "height": 480, "fps": 30}}' \
+    --robot.cameras='{"front": {"type": "opencv", "index_or_path": /dev/video1, "width": 640, "height": 480, "fps": 30}}' \
     --eval.num_episodes=10
 ```
 
@@ -334,7 +334,7 @@ The project uses a **single front-facing camera** (unlike standard SO-101 dual-c
 ```python
 cameras = {
     "front": OpenCVCameraConfig(
-        index_or_path=0,        # Usually 0 for built-in camera
+        index_or_path=/dev/video1,        
         fps=30,                 # 30 FPS recommended
         width=640,              # Minimum resolution
         height=480,

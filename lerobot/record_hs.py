@@ -214,20 +214,20 @@ def wait_for_handshake_detection(
             # Always display data to Rerun during waiting phase (no OpenCV window)
             # Clean interface: only essential robot states + pose detection
             
-            # Status indicators
+            # Status indicators (separate section)
             rr.log("status.recording_phase", rr.Scalar(0))  # 0 = waiting
             rr.log("status.handshake_confidence", rr.Scalar(detection_result['confidence']))
             rr.log("status.time_remaining", rr.Scalar(timeout_s - (time.perf_counter() - start_time)))
             
-            # Robot joint states only (6 values)
+            # Robot joint states only (6 values in clean section)
             for obs, val in observation.items():
                 if isinstance(val, float) and obs.endswith('.pos'):
-                    rr.log(f"waiting.{obs}", rr.Scalar(val))
+                    rr.log(f"robot.{obs}", rr.Scalar(val))  # Clean robot namespace
                 elif isinstance(val, np.ndarray) and obs == camera_name:
-                    # Show pose detection camera feed
+                    # Camera feed (separate section)
                     annotated_frame = detection_result.get('annotated_frame')
                     if annotated_frame is not None:
-                        rr.log(f"waiting.{obs}_with_pose", rr.Image(annotated_frame), static=True)
+                        rr.log(f"camera.{obs}_with_pose", rr.Image(annotated_frame), static=True)
             
             time.sleep(0.1)  # Small delay to prevent excessive CPU usage
             
@@ -327,26 +327,26 @@ def record_handshake_loop(
         if display_data:
             # Clean recording interface: essential robot states + pose detection
             
-            # Status indicators
+            # Status indicators (separate section)
             rr.log("status.recording_phase", rr.Scalar(1))  # 1 = recording
             rr.log("status.episode_number", rr.Scalar(episode_number))
             rr.log("status.episode_progress", rr.Scalar(min(1.0, timestamp / control_time_s)))
             
-            # Robot joint states only (6 values)
+            # Robot joint states only (6 values in clean section)
             for obs, val in observation.items():
                 if isinstance(val, float) and obs.endswith('.pos'):
-                    rr.log(f"observation.{obs}", rr.Scalar(val))
+                    rr.log(f"robot.{obs}", rr.Scalar(val))  # Clean robot namespace
                 elif isinstance(val, np.ndarray) and obs == main_camera_name:
-                    # Show pose detection camera feed
+                    # Camera feed (separate section)
                     frame = observation[main_camera_name]
                     handshake_result = handshake_detector.detect_handshake_gesture(frame, visualize=True)
                     if 'annotated_frame' in handshake_result:
-                        rr.log(f"observation.{obs}_with_pose", rr.Image(handshake_result['annotated_frame']), static=True)
+                        rr.log(f"camera.{obs}_with_pose", rr.Image(handshake_result['annotated_frame']), static=True)
             
-            # Robot actions (6 values)
+            # Robot actions (6 values in clean section)
             for act, val in action.items():
                 if isinstance(val, float):
-                    rr.log(f"action.{act}", rr.Scalar(val))
+                    rr.log(f"robot_action.{act}", rr.Scalar(val))  # Clean action namespace
 
         dt_s = time.perf_counter() - start_loop_t
         busy_wait(1 / fps - dt_s)
