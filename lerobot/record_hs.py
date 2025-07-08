@@ -154,12 +154,10 @@ def wait_for_handshake_detection(
             # Robot joint positions (6 values only) - grouped in single chart
             annotated_frame = detection_result.get('annotated_frame')
             robot_joints = {}
-            print(f"DEBUG WAITING: All observation keys: {list(observation.keys())}")
             for obs, val in observation.items():
                 if isinstance(val, float) and obs.endswith('.pos'):
                     # Collect all robot joint positions for single chart
                     robot_joints[obs] = val
-                    print(f"DEBUG WAITING: Found joint {obs} = {val}")
                 elif isinstance(val, np.ndarray):
                     if obs == camera_name and annotated_frame is not None:
                         # Camera with pose detection - consistent path
@@ -170,25 +168,13 @@ def wait_for_handshake_detection(
                         # Raw camera for other cameras
                         rr.log("camera_raw", rr.Image(val), static=True)
             
-            # Log all robot joints - try individual logs first to debug
-            print(f"DEBUG WAITING: robot_joints dict: {robot_joints}")
+            # Log robot joints efficiently
             if robot_joints:
-                # Try logging each joint individually first
+                # Log each joint individually for now (working solution)
                 for joint_name, joint_val in robot_joints.items():
-                    print(f"DEBUG WAITING: Logging individual joint {joint_name} = {joint_val}")
                     rr.log(f"robot_joints/{joint_name}", rr.Scalar(joint_val))
-                    
-                # Also try the grouped approach
-                joint_values = list(robot_joints.values())
-                joint_names = list(robot_joints.keys())
-                print(f"DEBUG WAITING: Also trying grouped logging with {len(joint_values)} joints")
-                try:
-                    rr.log("robot_joints_grouped", rr.Scalars(joint_values, names=joint_names))
-                except Exception as e:
-                    print(f"DEBUG WAITING: Grouped logging failed: {e}")
             else:
-                print("DEBUG WAITING: No robot joints found to log!")
-                # Log a test value to see if rerun works at all
+                # Fallback test value if no joints found
                 rr.log("robot_joints_test", rr.Scalar(1.0))
             
             time.sleep(0.1)  # Small delay to prevent excessive CPU usage
@@ -238,13 +224,22 @@ def record_handshake_loop(
             events["exit_early"] = False
             break
 
-        # Get teleop action FIRST for responsive control (like teleoperate.py)
+        # TELEOP MODE: Ultra-simple like teleoperate.py
         if policy is None and teleop is not None:
             action = teleop.get_action()
-            # Send action immediately for responsive control
             sent_action = robot.send_action(action)
+            
+            # Minimal observation for display only - no handshake detection
+            observation = robot.get_observation()
+            
+            # Add dummy handshake data for dataset compatibility
+            observation["handshake_ready"] = False
+            observation["handshake_confidence"] = 0.0
+            observation["hand_position_x"] = -1.0
+            observation["hand_position_y"] = -1.0
+            
         else:
-            # For policy mode, we need observation first
+            # POLICY MODE: Full processing
             observation = robot.get_observation()
             
             if policy is not None:
@@ -283,25 +278,6 @@ def record_handshake_loop(
                 )
                 continue
 
-        # Get observation for display and dataset recording (after action is sent)
-        observation = robot.get_observation()
-        
-        # Run handshake detection for display purposes
-        handshake_result = None
-        if main_camera_name in observation:
-            frame = observation[main_camera_name]
-            handshake_result = handshake_detector.detect_handshake_gesture(frame, visualize=False)
-            
-            # Add handshake detection data to observation for dataset recording
-            observation["handshake_ready"] = handshake_result['ready']
-            observation["handshake_confidence"] = handshake_result['confidence']
-            if handshake_result['hand_position'] is not None:
-                observation["hand_position_x"] = float(handshake_result['hand_position'][0])
-                observation["hand_position_y"] = float(handshake_result['hand_position'][1])
-            else:
-                observation["hand_position_x"] = -1.0
-                observation["hand_position_y"] = -1.0
-
         if dataset is not None:
             observation_frame = build_dataset_frame(dataset.features, observation, prefix="observation")
             action_frame = build_dataset_frame(dataset.features, sent_action, prefix="action")
@@ -325,12 +301,10 @@ def record_handshake_loop(
             
             # Robot joint positions (6 values only) - grouped in single chart
             robot_joints = {}
-            print(f"DEBUG RECORDING: All observation keys: {list(observation.keys())}")
             for obs, val in observation.items():
                 if isinstance(val, float) and obs.endswith('.pos'):
                     # Collect all robot joint positions for single chart
                     robot_joints[obs] = val
-                    print(f"DEBUG RECORDING: Found joint {obs} = {val}")
                 elif isinstance(val, np.ndarray):
                     if obs == main_camera_name and annotated_frame is not None:
                         # Camera with pose detection - consistent path
@@ -341,25 +315,13 @@ def record_handshake_loop(
                         # Raw camera for other cameras
                         rr.log("camera_raw", rr.Image(val), static=True)
             
-            # Log all robot joints - try individual logs first to debug  
-            print(f"DEBUG RECORDING: robot_joints dict: {robot_joints}")
+            # Log robot joints efficiently
             if robot_joints:
-                # Try logging each joint individually first
+                # Log each joint individually for now (working solution)
                 for joint_name, joint_val in robot_joints.items():
-                    print(f"DEBUG RECORDING: Logging individual joint {joint_name} = {joint_val}")
                     rr.log(f"robot_joints/{joint_name}", rr.Scalar(joint_val))
-                    
-                # Also try the grouped approach
-                joint_values = list(robot_joints.values())
-                joint_names = list(robot_joints.keys())
-                print(f"DEBUG RECORDING: Also trying grouped logging with {len(joint_values)} joints")
-                try:
-                    rr.log("robot_joints_grouped", rr.Scalars(joint_values, names=joint_names))
-                except Exception as e:
-                    print(f"DEBUG RECORDING: Grouped logging failed: {e}")
             else:
-                print("DEBUG RECORDING: No robot joints found to log!")
-                # Log a test value to see if rerun works at all
+                # Fallback test value if no joints found
                 rr.log("robot_joints_test", rr.Scalar(2.0))
             
             # Actions are sent to robot but NOT displayed in charts to keep it clean (6 values only)
@@ -470,20 +432,25 @@ def record_handshake(cfg: HandshakeRecordConfig) -> LeRobotDataset:
     while recorded_episodes < cfg.dataset.num_episodes and not events["stop_recording"]:
         log_say(f"Preparing to record handshake episode {dataset.num_episodes + 1}", cfg.play_sounds)
         
-        # Wait for handshake detection before starting episode
-        handshake_detected = wait_for_handshake_detection(
-            robot=robot,
-            handshake_detector=handshake_detector,
-            camera_name=main_camera_name,
-            timeout_s=cfg.dataset.handshake_timeout_s,
-            confidence_threshold=cfg.dataset.handshake_confidence_threshold,
-            detection_delay=cfg.dataset.handshake_detection_delay,
-            display_data=cfg.display_data,
-        )
-        
-        if not handshake_detected:
-            log_say("Skipping episode due to handshake detection timeout", cfg.play_sounds)
-            continue
+        # Wait for handshake detection before starting episode (skip if teleop only)
+        if policy is not None:
+            # Only do handshake detection when using a policy
+            handshake_detected = wait_for_handshake_detection(
+                robot=robot,
+                handshake_detector=handshake_detector,
+                camera_name=main_camera_name,
+                timeout_s=cfg.dataset.handshake_timeout_s,
+                confidence_threshold=cfg.dataset.handshake_confidence_threshold,
+                detection_delay=cfg.dataset.handshake_detection_delay,
+                display_data=cfg.display_data,
+            )
+            
+            if not handshake_detected:
+                log_say("Skipping episode due to handshake detection timeout", cfg.play_sounds)
+                continue
+        else:
+            # Teleop mode: skip handshake detection, start recording immediately
+            log_say("Teleop mode: Starting recording immediately (no handshake detection)", cfg.play_sounds)
         
         log_say(f"Recording handshake episode {dataset.num_episodes + 1}", cfg.play_sounds)
         record_handshake_loop(
