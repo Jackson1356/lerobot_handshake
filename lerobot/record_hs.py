@@ -151,21 +151,27 @@ def wait_for_handshake_detection(
                 rr.log("status", rr.TextLog(status_text, level=rr.TextLogLevel.INFO))
                 last_status_update = current_time
             
-            # Robot joint positions (6 values only) - like original LeRobot
+            # Robot joint positions (6 values only) - grouped in single chart
             annotated_frame = detection_result.get('annotated_frame')
+            robot_joints = {}
             for obs, val in observation.items():
                 if isinstance(val, float) and obs.endswith('.pos'):
-                    # Only log robot joint positions (6 values) to main observation chart
-                    rr.log(f"observation.{obs}", rr.Scalar(val))
+                    # Collect all robot joint positions for single chart
+                    robot_joints[obs] = val
                 elif isinstance(val, np.ndarray):
                     if obs == camera_name and annotated_frame is not None:
                         # Camera with pose detection - consistent path
-                        rr.log(f"camera_with_pose", rr.Image(annotated_frame), static=True)
+                        rr.log("camera_with_pose", rr.Image(annotated_frame), static=True)
                         # Raw camera - consistent path
-                        rr.log(f"camera_raw", rr.Image(val), static=True)
+                        rr.log("camera_raw", rr.Image(val), static=True)
                     else:
                         # Raw camera for other cameras
-                        rr.log(f"camera_raw", rr.Image(val), static=True)
+                        rr.log("camera_raw", rr.Image(val), static=True)
+            
+            # Log all robot joints as single grouped chart
+            if robot_joints:
+                for joint_name, joint_val in robot_joints.items():
+                    rr.log(f"robot_joints/{joint_name}", rr.Scalar(joint_val))
             
             time.sleep(0.1)  # Small delay to prevent excessive CPU usage
             
@@ -280,20 +286,26 @@ def record_handshake_loop(
                 rr.log("status", rr.TextLog(status_text, level=rr.TextLogLevel.INFO))
                 last_status_update = current_time
             
-            # Robot joint positions (6 values only) - like original LeRobot  
+            # Robot joint positions (6 values only) - grouped in single chart
+            robot_joints = {}
             for obs, val in observation.items():
                 if isinstance(val, float) and obs.endswith('.pos'):
-                    # Only log robot joint positions (6 values) to main observation chart
-                    rr.log(f"observation.{obs}", rr.Scalar(val))
+                    # Collect all robot joint positions for single chart
+                    robot_joints[obs] = val
                 elif isinstance(val, np.ndarray):
                     if obs == main_camera_name and annotated_frame is not None:
                         # Camera with pose detection - consistent path
-                        rr.log(f"camera_with_pose", rr.Image(annotated_frame), static=True)
+                        rr.log("camera_with_pose", rr.Image(annotated_frame), static=True)
                         # Raw camera - consistent path
-                        rr.log(f"camera_raw", rr.Image(val), static=True)
+                        rr.log("camera_raw", rr.Image(val), static=True)
                     else:
                         # Raw camera for other cameras
-                        rr.log(f"camera_raw", rr.Image(val), static=True)
+                        rr.log("camera_raw", rr.Image(val), static=True)
+            
+            # Log all robot joints as single grouped chart
+            if robot_joints:
+                for joint_name, joint_val in robot_joints.items():
+                    rr.log(f"robot_joints/{joint_name}", rr.Scalar(joint_val))
             
             # Actions are sent to robot but NOT displayed in charts to keep it clean (6 values only)
 
