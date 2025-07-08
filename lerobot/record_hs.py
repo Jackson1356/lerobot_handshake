@@ -104,7 +104,6 @@ def update_camera_config_with_working_index(robot_config: RobotConfig) -> RobotC
         if hasattr(cam_config, 'type') and cam_config.type == "opencv":
             # Create new config with working index
             new_config = OpenCVCameraConfig(
-                type="opencv",
                 index_or_path=working_index,
                 width=cam_config.width,
                 height=cam_config.height,
