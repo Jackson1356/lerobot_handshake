@@ -455,7 +455,7 @@ def record_handshake(cfg: HandshakeRecordConfig) -> LeRobotDataset:
             
             # Reset phase - status will be visible in console logs
             
-            # Use regular record loop for reset (without handshake detection)
+            # Use regular record loop for reset (without handshake detection and without display)
             from lerobot.record import record_loop
             record_loop(
                 robot=robot,
@@ -464,7 +464,7 @@ def record_handshake(cfg: HandshakeRecordConfig) -> LeRobotDataset:
                 teleop=teleop,
                 control_time_s=cfg.dataset.reset_time_s,
                 single_task=cfg.dataset.single_task,
-                display_data=cfg.display_data,
+                display_data=False,  # Disable display during reset to avoid extra windows
             )
 
         if events["rerecord_episode"]:
