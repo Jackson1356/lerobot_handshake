@@ -154,10 +154,12 @@ def wait_for_handshake_detection(
             # Robot joint positions (6 values only) - grouped in single chart
             annotated_frame = detection_result.get('annotated_frame')
             robot_joints = {}
+            print(f"DEBUG WAITING: All observation keys: {list(observation.keys())}")
             for obs, val in observation.items():
                 if isinstance(val, float) and obs.endswith('.pos'):
                     # Collect all robot joint positions for single chart
                     robot_joints[obs] = val
+                    print(f"DEBUG WAITING: Found joint {obs} = {val}")
                 elif isinstance(val, np.ndarray):
                     if obs == camera_name and annotated_frame is not None:
                         # Camera with pose detection - consistent path
@@ -169,11 +171,15 @@ def wait_for_handshake_detection(
                         rr.log("camera_raw", rr.Image(val), static=True)
             
             # Log all robot joints as single chart with multiple series
+            print(f"DEBUG WAITING: robot_joints dict: {robot_joints}")
             if robot_joints:
                 # Create a single chart with all joint values
                 joint_values = list(robot_joints.values())
                 joint_names = list(robot_joints.keys())
+                print(f"DEBUG WAITING: Logging {len(joint_values)} joints: {joint_names} = {joint_values}")
                 rr.log("robot_joints", rr.Scalars(joint_values, names=joint_names))
+            else:
+                print("DEBUG WAITING: No robot joints found to log!")
             
             time.sleep(0.1)  # Small delay to prevent excessive CPU usage
             
@@ -290,10 +296,12 @@ def record_handshake_loop(
             
             # Robot joint positions (6 values only) - grouped in single chart
             robot_joints = {}
+            print(f"DEBUG RECORDING: All observation keys: {list(observation.keys())}")
             for obs, val in observation.items():
                 if isinstance(val, float) and obs.endswith('.pos'):
                     # Collect all robot joint positions for single chart
                     robot_joints[obs] = val
+                    print(f"DEBUG RECORDING: Found joint {obs} = {val}")
                 elif isinstance(val, np.ndarray):
                     if obs == main_camera_name and annotated_frame is not None:
                         # Camera with pose detection - consistent path
@@ -305,11 +313,15 @@ def record_handshake_loop(
                         rr.log("camera_raw", rr.Image(val), static=True)
             
             # Log all robot joints as single chart with multiple series
+            print(f"DEBUG RECORDING: robot_joints dict: {robot_joints}")
             if robot_joints:
                 # Create a single chart with all joint values
                 joint_values = list(robot_joints.values())
                 joint_names = list(robot_joints.keys())
+                print(f"DEBUG RECORDING: Logging {len(joint_values)} joints: {joint_names} = {joint_values}")
                 rr.log("robot_joints", rr.Scalars(joint_values, names=joint_names))
+            else:
+                print("DEBUG RECORDING: No robot joints found to log!")
             
             # Actions are sent to robot but NOT displayed in charts to keep it clean (6 values only)
 
