@@ -63,9 +63,7 @@ from lerobot.common.robots import (  # noqa: F401
 from lerobot.common.teleoperators import (  # noqa: F401
     Teleoperator,
     TeleoperatorConfig,
-    koch_leader,
     make_teleoperator_from_config,
-    so100_leader,
     so101_leader,
 )
 from lerobot.common.utils.control_utils import (
