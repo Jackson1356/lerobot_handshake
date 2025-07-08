@@ -381,6 +381,7 @@ def record_handshake(cfg: HandshakeRecordConfig) -> LeRobotDataset:
     }
     
     dataset_features = {**action_features, **obs_features, **handshake_features}
+    
 
     if cfg.resume:
         dataset = LeRobotDataset(
