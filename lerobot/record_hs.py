@@ -107,6 +107,7 @@ def wait_for_handshake_detection(
     detection_delay: float,
     display_data: bool = False,
     teleop: Teleoperator | None = None,
+    episode_number: int = 0,
 ) -> bool:
     """
     Wait for handshake detection from the person.
@@ -153,7 +154,7 @@ def wait_for_handshake_detection(
             # Update status every second
             current_time = time.perf_counter()
             if current_time - last_status_update >= 1.0:
-                status_text = f"WAITING | Episode: 0 | Time remaining: {timeout_s - (current_time - start_time):.1f}s"
+                status_text = f"WAITING | Episode: {episode_number} | Time remaining: {timeout_s - (current_time - start_time):.1f}s"
                 rr.log("status", rr.TextLog(status_text, level=rr.TextLogLevel.INFO))
                 last_status_update = current_time
             
@@ -425,6 +426,7 @@ def record_handshake(cfg: HandshakeRecordConfig) -> LeRobotDataset:
             detection_delay=cfg.dataset.handshake_detection_delay,
             display_data=cfg.display_data,
             teleop=teleop,  # Enable teleop during waiting phase
+            episode_number=dataset.num_episodes + 1,
         )
         
         if not handshake_detected:
