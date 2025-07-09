@@ -259,14 +259,19 @@ def record_handshake_loop(
 
         observation = robot.get_observation()
 
-        # Run handshake detection for dataset recording and pose overlay
+        # Run handshake detection ONCE per frame (optimized for performance)
         handshake_result = None
+        annotated_frame = None
         if main_camera_name in observation:
             frame = observation[main_camera_name]
-            handshake_result = handshake_detector.detect_handshake_gesture(frame, visualize=False)
+            # Run detection with visualization if display_data is True, otherwise without
+            handshake_result = handshake_detector.detect_handshake_gesture(frame, visualize=display_data)
+            
+            # Extract annotated frame if visualization was enabled
+            if display_data and 'annotated_frame' in handshake_result:
+                annotated_frame = handshake_result['annotated_frame']
             
             # Add handshake detection data to observation for dataset recording
-            # (but filter out from Rerun display to keep it clean)
             handshake_ready = float(handshake_result['ready'])
             handshake_confidence = handshake_result['confidence']
             if handshake_result['hand_position'] is not None:
@@ -315,13 +320,6 @@ def record_handshake_loop(
             dataset.add_frame(frame, task=single_task)
 
         if display_data:
-            # Get pose overlay for camera feed
-            annotated_frame = None
-            if main_camera_name in observation and handshake_result:
-                full_handshake_result = handshake_detector.detect_handshake_gesture(observation[main_camera_name], visualize=True)
-                if 'annotated_frame' in full_handshake_result:
-                    annotated_frame = full_handshake_result['annotated_frame']
-            
             # Update status every second 
             current_time = time.perf_counter()
             if current_time - last_status_update >= 1.0:
