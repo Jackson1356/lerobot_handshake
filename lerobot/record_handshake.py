@@ -352,8 +352,13 @@ def record_handshake_loop(
             # Actions are sent to robot but NOT displayed in charts to keep it clean (6 values only)
 
         dt_s = time.perf_counter() - start_loop_t
-        busy_wait(1 / fps - dt_s)
-
+        
+        # Ensure proper FPS timing - don't let loop run faster than target FPS
+        target_dt = 1 / fps
+        if dt_s < target_dt:
+            busy_wait(target_dt - dt_s)
+        # If dt_s >= target_dt, we're already behind, so continue immediately
+        
         timestamp = time.perf_counter() - start_episode_t
 
 
