@@ -249,31 +249,7 @@ def record_handshake_loop(
     timestamp = 0
     start_episode_t = time.perf_counter()
     last_status_update = 0
-    
-    # FPS debugging
     frame_count = 0
-    fps_debug_start = time.perf_counter()
-    total_handshake_time = 0
-    total_robot_time = 0
-    total_busy_wait_time = 0
-    total_teleop_time = 0
-    total_dataset_time = 0
-    total_display_time = 0
-    total_build_frame_time = 0
-    
-    # Handshake detection fps control (run at lower rate to improve performance)
-    handshake_fps = 10  # Run handshake detection at 10fps instead of 30fps
-    last_handshake_time = 0
-    cached_handshake_result = None
-    cached_annotated_frame = None
-    
-    # Performance debugging: temporarily disable display to test bottleneck
-    debug_disable_display = True  # Set to True to test if display is the bottleneck
-    
-    logging.info(f"Starting recording loop: target_fps={fps}, expected_duration={control_time_s}s")
-    logging.info(f"Handshake detection will run at {handshake_fps}fps for better performance")
-    if debug_disable_display:
-        logging.info("DEBUG: Display operations disabled for performance testing")
     
     while timestamp < control_time_s:
         start_loop_t = time.perf_counter()
@@ -282,70 +258,34 @@ def record_handshake_loop(
             events["exit_early"] = False
             break
 
-        # Measure robot observation time
-        robot_start = time.perf_counter()
         observation = robot.get_observation()
-        robot_time = time.perf_counter() - robot_start
-        total_robot_time += robot_time
 
-        # Run handshake detection at reduced fps for better performance
-        handshake_start = time.perf_counter()
+        # Run handshake detection for dataset recording and pose overlay
         handshake_result = None
-        current_time = time.perf_counter()
-        
         if main_camera_name in observation:
-            # Only run handshake detection every 1/handshake_fps seconds
-            if current_time - last_handshake_time >= (1.0 / handshake_fps):
-                frame = observation[main_camera_name]
-                # Run with visualization only if display is enabled and not disabled for debugging
-                should_visualize = display_data and not debug_disable_display
-                full_result = handshake_detector.detect_handshake_gesture(frame, visualize=should_visualize)
-                cached_handshake_result = full_result
-                if should_visualize and 'annotated_frame' in full_result:
-                    cached_annotated_frame = full_result['annotated_frame']
-                else:
-                    cached_annotated_frame = None
-                last_handshake_time = current_time
+            frame = observation[main_camera_name]
+            handshake_result = handshake_detector.detect_handshake_gesture(frame, visualize=False)
             
-            # Use cached result for dataset recording
-            handshake_result = cached_handshake_result
-            
-            if handshake_result is not None:
-                # Add handshake detection data to observation for dataset recording
-                # (but filter out from Rerun display to keep it clean)
-                handshake_ready = float(handshake_result['ready'])
-                handshake_confidence = handshake_result['confidence']
-                if handshake_result['hand_position'] is not None:
-                    hand_position_x = float(handshake_result['hand_position'][0])
-                    hand_position_y = float(handshake_result['hand_position'][1])
-                else:
-                    hand_position_x = -1.0
-                    hand_position_y = -1.0
-                
-                # Add individual handshake values to observation (required by build_dataset_frame)
-                observation["handshake_ready"] = handshake_ready
-                observation["handshake_confidence"] = handshake_confidence
-                observation["hand_position_x"] = hand_position_x
-                observation["hand_position_y"] = hand_position_y
+            # Add handshake detection data to observation for dataset recording
+            # (but filter out from Rerun display to keep it clean)
+            handshake_ready = float(handshake_result['ready'])
+            handshake_confidence = handshake_result['confidence']
+            if handshake_result['hand_position'] is not None:
+                hand_position_x = float(handshake_result['hand_position'][0])
+                hand_position_y = float(handshake_result['hand_position'][1])
             else:
-                # Fallback values if no handshake detection result yet
-                observation["handshake_ready"] = 0.0
-                observation["handshake_confidence"] = 0.0
-                observation["hand_position_x"] = -1.0
-                observation["hand_position_y"] = -1.0
-        
-        handshake_time = time.perf_counter() - handshake_start
-        total_handshake_time += handshake_time
+                hand_position_x = -1.0
+                hand_position_y = -1.0
+            
+            # Add individual handshake values to observation (required by build_dataset_frame)
+            observation["handshake_ready"] = handshake_ready
+            observation["handshake_confidence"] = handshake_confidence
+            observation["hand_position_x"] = hand_position_x
+            observation["hand_position_y"] = hand_position_y
 
-        # Build observation frame
-        build_frame_start = time.perf_counter()
         if policy is not None or dataset is not None:
             observation_frame = build_dataset_frame(dataset.features, observation, prefix="observation")
-        build_frame_time = time.perf_counter() - build_frame_start
-        total_build_frame_time += build_frame_time
 
-        # Get teleop action
-        teleop_start = time.perf_counter()
         if policy is not None:
             action_values = predict_action(
                 observation_frame,
@@ -365,35 +305,31 @@ def record_handshake_loop(
                 "The robot won't be at its rest position at the start of the next episode."
             )
             continue
-        teleop_time = time.perf_counter() - teleop_start
-        total_teleop_time += teleop_time
 
         # Action can eventually be clipped using `max_relative_target`,
         # so action actually sent is saved in the dataset.
         sent_action = robot.send_action(action)
 
-        # Dataset operations
-        dataset_start = time.perf_counter()
         if dataset is not None:
             action_frame = build_dataset_frame(dataset.features, sent_action, prefix="action")
             frame = {**observation_frame, **action_frame}
             dataset.add_frame(frame, task=single_task)
-        dataset_time = time.perf_counter() - dataset_start
-        total_dataset_time += dataset_time
 
-        # Display operations
-        display_start = time.perf_counter()
-        if display_data and not debug_disable_display:
-            # Use cached annotated frame from handshake detection
-            annotated_frame = cached_annotated_frame
+        if display_data:
+            # Get pose overlay for camera feed
+            annotated_frame = None
+            if main_camera_name in observation and handshake_result:
+                full_handshake_result = handshake_detector.detect_handshake_gesture(observation[main_camera_name], visualize=True)
+                if 'annotated_frame' in full_handshake_result:
+                    annotated_frame = full_handshake_result['annotated_frame']
             
             # Update status every second 
             current_time = time.perf_counter()
             if current_time - last_status_update >= 1.0:
-                actual_fps = frame_count / (current_time - fps_debug_start) if current_time > fps_debug_start else 0
+                # Calculate actual FPS
+                actual_fps = frame_count / timestamp if timestamp > 0 else 0
                 status_text = f"RECORDING | Episode: {episode_number} | Elapsed: {timestamp:.1f}s | Remaining: {max(0, control_time_s - timestamp):.1f}s | Actual FPS: {actual_fps:.1f}"
                 rr.log("status", rr.TextLog(status_text, level=rr.TextLogLevel.INFO))
-                logging.info(f"Recording progress: {actual_fps:.1f} actual fps vs {fps} target fps")
                 last_status_update = current_time
             
             # Robot joint positions (6 values only) - grouped in single chart
@@ -420,51 +356,11 @@ def record_handshake_loop(
             
             # Actions are sent to robot but NOT displayed in charts to keep it clean (6 values only)
 
-        display_time = time.perf_counter() - display_start
-        total_display_time += display_time
-
         dt_s = time.perf_counter() - start_loop_t
-        busy_wait_start = time.perf_counter()
         busy_wait(1 / fps - dt_s)
-        busy_wait_time = time.perf_counter() - busy_wait_start
-        total_busy_wait_time += busy_wait_time
 
         timestamp = time.perf_counter() - start_episode_t
         frame_count += 1
-
-    # Final fps analysis
-    total_time = time.perf_counter() - fps_debug_start
-    actual_fps = frame_count / total_time
-    avg_handshake_time = total_handshake_time / frame_count if frame_count > 0 else 0
-    avg_robot_time = total_robot_time / frame_count if frame_count > 0 else 0
-    avg_busy_wait_time = total_busy_wait_time / frame_count if frame_count > 0 else 0
-    avg_teleop_time = total_teleop_time / frame_count if frame_count > 0 else 0
-    avg_dataset_time = total_dataset_time / frame_count if frame_count > 0 else 0
-    avg_display_time = total_display_time / frame_count if frame_count > 0 else 0
-    avg_build_frame_time = total_build_frame_time / frame_count if frame_count > 0 else 0
-    
-    logging.info(f"=== RECORDING PERFORMANCE DEBUG ===")
-    logging.info(f"Target FPS: {fps}")
-    logging.info(f"Actual FPS: {actual_fps:.2f}")
-    logging.info(f"Handshake detection FPS: {handshake_fps} (optimized)")
-    logging.info(f"Frame count: {frame_count}")
-    logging.info(f"Total time: {total_time:.2f}s")
-    logging.info(f"Expected frames at {fps}fps: {fps * control_time_s}")
-    logging.info(f"")
-    logging.info(f"=== TIMING BREAKDOWN (per frame) ===")
-    logging.info(f"Robot observation:     {avg_robot_time*1000:.1f}ms")
-    logging.info(f"Handshake detection:   {avg_handshake_time*1000:.1f}ms")
-    logging.info(f"Build dataset frame:   {avg_build_frame_time*1000:.1f}ms")
-    logging.info(f"Teleop/policy:         {avg_teleop_time*1000:.1f}ms")
-    logging.info(f"Dataset operations:    {avg_dataset_time*1000:.1f}ms")
-    logging.info(f"Display/Rerun:         {avg_display_time*1000:.1f}ms")
-    logging.info(f"Busy wait:             {avg_busy_wait_time*1000:.1f}ms")
-    total_accounted = (avg_robot_time + avg_handshake_time + avg_build_frame_time + 
-                      avg_teleop_time + avg_dataset_time + avg_display_time + avg_busy_wait_time) * 1000
-    logging.info(f"Total accounted:       {total_accounted:.1f}ms")
-    logging.info(f"Target frame time:     {1000/fps:.1f}ms")
-    logging.info(f"Performance ratio: {actual_fps/fps:.2f}")
-    logging.info("======================================")
 
 
 @parser.wrap()
@@ -477,20 +373,6 @@ def record_handshake(cfg: HandshakeRecordConfig) -> LeRobotDataset:
 
     robot = make_robot_from_config(cfg.robot)
     teleop = make_teleoperator_from_config(cfg.teleop) if cfg.teleop is not None else None
-
-    robot.connect()
-    if teleop is not None:
-        teleop.connect()
-
-    # Debug camera fps configuration after connection
-    if hasattr(robot, 'cameras') and robot.cameras:
-        for camera_name, camera in robot.cameras.items():
-            if hasattr(camera, 'fps'):
-                logging.info(f"Camera '{camera_name}' configured fps: {camera.fps}")
-            if hasattr(camera, 'videocapture') and camera.videocapture is not None:
-                actual_camera_fps = camera.videocapture.get(cv2.CAP_PROP_FPS)
-                logging.info(f"Camera '{camera_name}' actual hardware fps: {actual_camera_fps}")
-    logging.info(f"Dataset recording fps: {cfg.dataset.fps}")
 
     # Initialize handshake detector
     try:
@@ -554,6 +436,10 @@ def record_handshake(cfg: HandshakeRecordConfig) -> LeRobotDataset:
 
     # Load pretrained policy
     policy = None if cfg.policy is None else make_policy(cfg.policy, ds_meta=dataset.meta)
+
+    robot.connect()
+    if teleop is not None:
+        teleop.connect()
 
     # Status will be shown as text overlay - no separate charts needed
 
