@@ -237,7 +237,7 @@ def record_handshake_loop(
             
             # Add handshake detection data to observation for dataset recording
             # (but filter out from Rerun display to keep it clean)
-            observation["handshake_ready"] = handshake_result['ready']
+            observation["handshake_ready"] = float(handshake_result['ready'])
             observation["handshake_confidence"] = handshake_result['confidence']
             if handshake_result['hand_position'] is not None:
                 observation["hand_position_x"] = float(handshake_result['hand_position'][0])
@@ -359,24 +359,24 @@ def record_handshake(cfg: HandshakeRecordConfig) -> LeRobotDataset:
     # Add handshake detection features
     handshake_features = {
         "observation.handshake_ready": {
-            "dtype": "int64",
+            "dtype": "float32",
             "shape": (1,),
-            "names": None,
+            "names": ["handshake_ready"],
         },
         "observation.handshake_confidence": {
             "dtype": "float32", 
             "shape": (1,),
-            "names": None,
+            "names": ["handshake_confidence"],
         },
         "observation.hand_position_x": {
             "dtype": "float32",
             "shape": (1,),
-            "names": None,
+            "names": ["hand_position_x"],
         },
         "observation.hand_position_y": {
             "dtype": "float32",
             "shape": (1,),
-            "names": None,
+            "names": ["hand_position_y"],
         },
     }
     
