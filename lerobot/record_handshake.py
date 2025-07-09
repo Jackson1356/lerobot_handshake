@@ -147,10 +147,12 @@ def wait_for_handshake_detection(
     start_time = time.perf_counter()
     detection_start_time = None
     last_status_update = 0
+    waiting_fps = 10  # Lower fps during waiting to reduce CPU usage
     
     log_say("Waiting for person to extend their hand for handshake...", True)
     
     while time.perf_counter() - start_time < timeout_s:
+        loop_start_t = time.perf_counter()
         try:
             observation = robot.get_observation()
                 
@@ -210,7 +212,9 @@ def wait_for_handshake_detection(
                 for joint_name, joint_val in robot_joints.items():
                     rr.log(f"robot_joints/{joint_name}", rr.Scalar(joint_val))
             
-            time.sleep(0.1)  # Small delay to prevent excessive CPU usage
+            # Control fps during waiting to reduce CPU usage
+            dt_s = time.perf_counter() - loop_start_t
+            busy_wait(1 / waiting_fps - dt_s)
             
         except KeyboardInterrupt:
             logging.info("KeyboardInterrupt received in handshake detection")
@@ -259,19 +263,18 @@ def record_handshake_loop(
 
         observation = robot.get_observation()
 
-        # Run handshake detection ONCE per frame (optimized for performance)
+        # Run handshake detection for dataset recording and pose overlay
         handshake_result = None
         annotated_frame = None
         if main_camera_name in observation:
             frame = observation[main_camera_name]
-            # Run detection with visualization if display_data is True, otherwise without
+            # Single call with visualization enabled to get both data and annotated frame
             handshake_result = handshake_detector.detect_handshake_gesture(frame, visualize=display_data)
-            
-            # Extract annotated frame if visualization was enabled
             if display_data and 'annotated_frame' in handshake_result:
                 annotated_frame = handshake_result['annotated_frame']
             
             # Add handshake detection data to observation for dataset recording
+            # (but filter out from Rerun display to keep it clean)
             handshake_ready = float(handshake_result['ready'])
             handshake_confidence = handshake_result['confidence']
             if handshake_result['hand_position'] is not None:
@@ -320,6 +323,9 @@ def record_handshake_loop(
             dataset.add_frame(frame, task=single_task)
 
         if display_data:
+            # Get pose overlay for camera feed
+            # annotated_frame is already obtained above
+            
             # Update status every second 
             current_time = time.perf_counter()
             if current_time - last_status_update >= 1.0:
@@ -352,13 +358,8 @@ def record_handshake_loop(
             # Actions are sent to robot but NOT displayed in charts to keep it clean (6 values only)
 
         dt_s = time.perf_counter() - start_loop_t
-        
-        # Ensure proper FPS timing - don't let loop run faster than target FPS
-        target_dt = 1 / fps
-        if dt_s < target_dt:
-            busy_wait(target_dt - dt_s)
-        # If dt_s >= target_dt, we're already behind, so continue immediately
-        
+        busy_wait(1 / fps - dt_s)
+
         timestamp = time.perf_counter() - start_episode_t
 
 
