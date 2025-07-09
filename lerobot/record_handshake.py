@@ -257,7 +257,14 @@ def record_handshake_loop(
     total_robot_time = 0
     total_busy_wait_time = 0
     
+    # Handshake detection fps control (run at lower rate to improve performance)
+    handshake_fps = 10  # Run handshake detection at 10fps instead of 30fps
+    last_handshake_time = 0
+    cached_handshake_result = None
+    cached_annotated_frame = None
+    
     logging.info(f"Starting recording loop: target_fps={fps}, expected_duration={control_time_s}s")
+    logging.info(f"Handshake detection will run at {handshake_fps}fps for better performance")
     
     while timestamp < control_time_s:
         start_loop_t = time.perf_counter()
@@ -272,29 +279,48 @@ def record_handshake_loop(
         robot_time = time.perf_counter() - robot_start
         total_robot_time += robot_time
 
-        # Run handshake detection for dataset recording and pose overlay
+        # Run handshake detection at reduced fps for better performance
         handshake_start = time.perf_counter()
         handshake_result = None
+        current_time = time.perf_counter()
+        
         if main_camera_name in observation:
-            frame = observation[main_camera_name]
-            handshake_result = handshake_detector.detect_handshake_gesture(frame, visualize=False)
+            # Only run handshake detection every 1/handshake_fps seconds
+            if current_time - last_handshake_time >= (1.0 / handshake_fps):
+                frame = observation[main_camera_name]
+                # Run once with visualization to get both data and annotated frame
+                full_result = handshake_detector.detect_handshake_gesture(frame, visualize=display_data)
+                cached_handshake_result = full_result
+                if display_data and 'annotated_frame' in full_result:
+                    cached_annotated_frame = full_result['annotated_frame']
+                last_handshake_time = current_time
             
-            # Add handshake detection data to observation for dataset recording
-            # (but filter out from Rerun display to keep it clean)
-            handshake_ready = float(handshake_result['ready'])
-            handshake_confidence = handshake_result['confidence']
-            if handshake_result['hand_position'] is not None:
-                hand_position_x = float(handshake_result['hand_position'][0])
-                hand_position_y = float(handshake_result['hand_position'][1])
+            # Use cached result for dataset recording
+            handshake_result = cached_handshake_result
+            
+            if handshake_result is not None:
+                # Add handshake detection data to observation for dataset recording
+                # (but filter out from Rerun display to keep it clean)
+                handshake_ready = float(handshake_result['ready'])
+                handshake_confidence = handshake_result['confidence']
+                if handshake_result['hand_position'] is not None:
+                    hand_position_x = float(handshake_result['hand_position'][0])
+                    hand_position_y = float(handshake_result['hand_position'][1])
+                else:
+                    hand_position_x = -1.0
+                    hand_position_y = -1.0
+                
+                # Add individual handshake values to observation (required by build_dataset_frame)
+                observation["handshake_ready"] = handshake_ready
+                observation["handshake_confidence"] = handshake_confidence
+                observation["hand_position_x"] = hand_position_x
+                observation["hand_position_y"] = hand_position_y
             else:
-                hand_position_x = -1.0
-                hand_position_y = -1.0
-            
-            # Add individual handshake values to observation (required by build_dataset_frame)
-            observation["handshake_ready"] = handshake_ready
-            observation["handshake_confidence"] = handshake_confidence
-            observation["hand_position_x"] = hand_position_x
-            observation["hand_position_y"] = hand_position_y
+                # Fallback values if no handshake detection result yet
+                observation["handshake_ready"] = 0.0
+                observation["handshake_confidence"] = 0.0
+                observation["hand_position_x"] = -1.0
+                observation["hand_position_y"] = -1.0
         
         handshake_time = time.perf_counter() - handshake_start
         total_handshake_time += handshake_time
@@ -332,12 +358,8 @@ def record_handshake_loop(
             dataset.add_frame(frame, task=single_task)
 
         if display_data:
-            # Get pose overlay for camera feed
-            annotated_frame = None
-            if main_camera_name in observation and handshake_result:
-                full_handshake_result = handshake_detector.detect_handshake_gesture(observation[main_camera_name], visualize=True)
-                if 'annotated_frame' in full_handshake_result:
-                    annotated_frame = full_handshake_result['annotated_frame']
+            # Use cached annotated frame from handshake detection
+            annotated_frame = cached_annotated_frame
             
             # Update status every second 
             current_time = time.perf_counter()
@@ -391,6 +413,7 @@ def record_handshake_loop(
     logging.info(f"=== RECORDING PERFORMANCE DEBUG ===")
     logging.info(f"Target FPS: {fps}")
     logging.info(f"Actual FPS: {actual_fps:.2f}")
+    logging.info(f"Handshake detection FPS: {handshake_fps} (optimized)")
     logging.info(f"Frame count: {frame_count}")
     logging.info(f"Total time: {total_time:.2f}s")
     logging.info(f"Expected frames at {fps}fps: {fps * control_time_s}")
