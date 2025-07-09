@@ -230,7 +230,7 @@ python -m lerobot.record_handshake \
     --dataset.num_episodes=10 \
     --dataset.single_task="Shake hands with person when they extend their hand" \
     --dataset.episode_time_s=30 \
-     --dataset.reset_time_s=15 \
+    --dataset.reset_time_s=15 \
     --display_data=true      
 ```
 
@@ -254,7 +254,7 @@ Before training your policy, it's recommended to visualize your recorded dataset
 
 ```bash
 python -m lerobot.scripts.visualize_dataset_html \
-    --dataset.repo_id=your-username/handshake_dataset \
+    --repo-id=your-username/handshake_dataset \
     --output-dir=./dataset_visualization
 ```
 
