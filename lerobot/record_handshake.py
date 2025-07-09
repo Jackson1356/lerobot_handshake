@@ -268,7 +268,7 @@ def record_handshake_loop(
     cached_annotated_frame = None
     
     # Performance debugging: temporarily disable display to test bottleneck
-    debug_disable_display = False  # Set to True to test if display is the bottleneck
+    debug_disable_display = True  # Set to True to test if display is the bottleneck
     
     logging.info(f"Starting recording loop: target_fps={fps}, expected_duration={control_time_s}s")
     logging.info(f"Handshake detection will run at {handshake_fps}fps for better performance")
