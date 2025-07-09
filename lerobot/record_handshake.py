@@ -91,7 +91,8 @@ class HandshakeDatasetRecordConfig:
     handshake_confidence_threshold: float = 0.8
     handshake_detection_delay: float = 1.0
     handshake_timeout_s: float = 10.0
-    handshake_detection_fps: int = 10  # Run handshake detection at lower FPS during recording
+    handshake_detection_fps: int = 5   # Run handshake detection at lower FPS during recording
+    visualization_fps: int = 15        # Run Rerun visualization at lower FPS to improve performance
 
     num_image_writer_processes: int = 0
     num_image_writer_threads_per_camera: int = 4
@@ -239,7 +240,8 @@ def record_handshake_loop(
     single_task: str | None = None,
     display_data: bool = False,
     episode_number: int = 0,
-    handshake_detection_fps: int = 10,
+    handshake_detection_fps: int = 5,
+    visualization_fps: int = 15,
 ):
     if dataset is not None and dataset.fps != fps:
         raise ValueError(f"The dataset fps should be equal to requested fps ({dataset.fps} != {fps}).")
@@ -253,8 +255,9 @@ def record_handshake_loop(
     last_status_update = 0
     frame_count = 0
     
-    # Handshake detection optimization - run at lower frequency
+    # Performance optimization - run expensive operations at lower frequency
     detection_interval = max(1, fps // handshake_detection_fps)  # Run detection every N frames
+    visualization_interval = max(1, fps // visualization_fps)    # Run Rerun logging every N frames  
     last_handshake_result = None
     
     while timestamp < control_time_s:
@@ -329,7 +332,7 @@ def record_handshake_loop(
             frame = {**observation_frame, **action_frame}
             dataset.add_frame(frame, task=single_task)
 
-        if display_data:
+        if display_data and frame_count % visualization_interval == 0:
             # Get pose overlay for camera feed using cached result
             annotated_frame = None
             if main_camera_name in observation and last_handshake_result and 'annotated_frame' in last_handshake_result:
@@ -493,6 +496,7 @@ def record_handshake(cfg: HandshakeRecordConfig) -> LeRobotDataset:
             display_data=cfg.display_data,
             episode_number=dataset.num_episodes,
             handshake_detection_fps=cfg.dataset.handshake_detection_fps,
+            visualization_fps=cfg.dataset.visualization_fps,
         )
 
         # Execute a few seconds without recording to give time to manually reset the environment
