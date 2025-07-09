@@ -276,13 +276,6 @@ python -m lerobot.scripts.visualize_dataset \
     --save-video
 ```
 
-### Visualization Tips
-
-1. **Check Detection Quality**: Verify that handshake detection is working correctly across episodes
-2. **Review Robot Movements**: Ensure smooth teleoperation without jerky motions
-3. **Validate Synchronization**: Confirm camera and robot data are properly aligned
-4. **Identify Issues**: Look for episodes with poor lighting, occlusions, or failed detections
-
 ---
 
 ## 🔄 Replaying Handshake Datasets
