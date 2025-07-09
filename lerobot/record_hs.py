@@ -237,14 +237,17 @@ def record_handshake_loop(
             
             # Add handshake detection data to observation for dataset recording
             # (but filter out from Rerun display to keep it clean)
-            observation["handshake_ready"] = float(handshake_result['ready'])
-            observation["handshake_confidence"] = handshake_result['confidence']
+            handshake_ready = float(handshake_result['ready'])
+            handshake_confidence = handshake_result['confidence']
             if handshake_result['hand_position'] is not None:
-                observation["hand_position_x"] = float(handshake_result['hand_position'][0])
-                observation["hand_position_y"] = float(handshake_result['hand_position'][1])
+                hand_position_x = float(handshake_result['hand_position'][0])
+                hand_position_y = float(handshake_result['hand_position'][1])
             else:
-                observation["hand_position_x"] = -1.0
-                observation["hand_position_y"] = -1.0
+                hand_position_x = -1.0
+                hand_position_y = -1.0
+            
+            # Group handshake features into a single array (like robot joints)
+            observation["handshake"] = [handshake_ready, handshake_confidence, hand_position_x, hand_position_y]
 
         if policy is not None or dataset is not None:
             observation_frame = build_dataset_frame(dataset.features, observation, prefix="observation")
@@ -352,31 +355,16 @@ def record_handshake(cfg: HandshakeRecordConfig) -> LeRobotDataset:
     main_camera_name = list(robot.config.cameras.keys())[0]
     logging.info(f"Using camera '{main_camera_name}' for handshake detection")
 
-    # Build dataset features including handshake detection data
+    # Build dataset features (without handshake features to avoid build_dataset_frame issues)
     action_features = hw_to_dataset_features(robot.action_features, "action", cfg.dataset.video)
     obs_features = hw_to_dataset_features(robot.observation_features, "observation", cfg.dataset.video)
     
-    # Add handshake detection features
+    # Add handshake detection features as a single grouped feature (like robot joints)
     handshake_features = {
-        "observation.handshake_ready": {
+        "observation.handshake": {
             "dtype": "float32",
-            "shape": (1,),
-            "names": ["handshake_ready"],
-        },
-        "observation.handshake_confidence": {
-            "dtype": "float32", 
-            "shape": (1,),
-            "names": ["handshake_confidence"],
-        },
-        "observation.hand_position_x": {
-            "dtype": "float32",
-            "shape": (1,),
-            "names": ["hand_position_x"],
-        },
-        "observation.hand_position_y": {
-            "dtype": "float32",
-            "shape": (1,),
-            "names": ["hand_position_y"],
+            "shape": (4,),
+            "names": ["handshake_ready", "handshake_confidence", "hand_position_x", "hand_position_y"],
         },
     }
     
