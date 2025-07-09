@@ -285,6 +285,30 @@ python -m lerobot.scripts.visualize_dataset \
 
 ---
 
+## 🔄 Replaying Handshake Datasets
+
+After recording and visualizing your dataset, you can replay specific episodes to verify the quality of your demonstrations and test robot movements:
+
+```bash
+python -m lerobot.replay \
+    --robot.type=so101_follower \
+    --robot.port=/dev/ttyACM1 \
+    --robot.id=my_follower_arm \
+    --dataset.repo_id=your-username/handshake_dataset \
+    --dataset.episode=2 \
+    --dataset.fps=30
+```
+
+### Replay Features
+
+The replay script will:
+- **Load Episode Data**: Extract action sequences from the specified episode
+- **Reproduce Movements**: Send exact action commands to your robot
+- **Match Timing**: Replay at the original recording framerate
+- **Safety Monitoring**: Ensure robot stays within safe operating ranges
+
+---
+
 ## 🎓 Training Handshake Policies
 
 Train your robot using the specialized training script:
