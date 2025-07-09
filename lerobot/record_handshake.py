@@ -256,6 +256,9 @@ def record_handshake_loop(
     total_handshake_time = 0
     total_robot_time = 0
     total_busy_wait_time = 0
+    total_dataset_time = 0
+    total_display_time = 0
+    total_teleop_time = 0
     
     # Handshake detection fps control (run at lower rate to improve performance)
     handshake_fps = 10  # Run handshake detection at 10fps instead of 30fps
@@ -328,6 +331,8 @@ def record_handshake_loop(
         if policy is not None or dataset is not None:
             observation_frame = build_dataset_frame(dataset.features, observation, prefix="observation")
 
+        # Measure teleop/action time
+        teleop_start = time.perf_counter()
         if policy is not None:
             action_values = predict_action(
                 observation_frame,
@@ -351,12 +356,20 @@ def record_handshake_loop(
         # Action can eventually be clipped using `max_relative_target`,
         # so action actually sent is saved in the dataset.
         sent_action = robot.send_action(action)
+        teleop_time = time.perf_counter() - teleop_start
+        total_teleop_time += teleop_time
 
+        # Measure dataset operations time
+        dataset_start = time.perf_counter()
         if dataset is not None:
             action_frame = build_dataset_frame(dataset.features, sent_action, prefix="action")
             frame = {**observation_frame, **action_frame}
             dataset.add_frame(frame, task=single_task)
+        dataset_time = time.perf_counter() - dataset_start
+        total_dataset_time += dataset_time
 
+        # Measure display operations time
+        display_start = time.perf_counter()
         if display_data:
             # Use cached annotated frame from handshake detection
             annotated_frame = cached_annotated_frame
@@ -394,6 +407,9 @@ def record_handshake_loop(
             
             # Actions are sent to robot but NOT displayed in charts to keep it clean (6 values only)
 
+        display_time = time.perf_counter() - display_start
+        total_display_time += display_time
+
         dt_s = time.perf_counter() - start_loop_t
         busy_wait_start = time.perf_counter()
         busy_wait(1 / fps - dt_s)
@@ -409,6 +425,9 @@ def record_handshake_loop(
     avg_handshake_time = total_handshake_time / frame_count if frame_count > 0 else 0
     avg_robot_time = total_robot_time / frame_count if frame_count > 0 else 0
     avg_busy_wait_time = total_busy_wait_time / frame_count if frame_count > 0 else 0
+    avg_dataset_time = total_dataset_time / frame_count if frame_count > 0 else 0
+    avg_display_time = total_display_time / frame_count if frame_count > 0 else 0
+    avg_teleop_time = total_teleop_time / frame_count if frame_count > 0 else 0
     
     logging.info(f"=== RECORDING PERFORMANCE DEBUG ===")
     logging.info(f"Target FPS: {fps}")
@@ -417,8 +436,12 @@ def record_handshake_loop(
     logging.info(f"Frame count: {frame_count}")
     logging.info(f"Total time: {total_time:.2f}s")
     logging.info(f"Expected frames at {fps}fps: {fps * control_time_s}")
+    logging.info(f"=== TIME BREAKDOWN PER FRAME ===")
     logging.info(f"Avg handshake detection time: {avg_handshake_time*1000:.1f}ms")
     logging.info(f"Avg robot observation time: {avg_robot_time*1000:.1f}ms")
+    logging.info(f"Avg teleop/action time: {avg_teleop_time*1000:.1f}ms")
+    logging.info(f"Avg dataset operations time: {avg_dataset_time*1000:.1f}ms")
+    logging.info(f"Avg display time: {avg_display_time*1000:.1f}ms")
     logging.info(f"Avg busy_wait time: {avg_busy_wait_time*1000:.1f}ms")
     logging.info(f"Performance ratio: {actual_fps/fps:.2f}")
     logging.info("======================================")
