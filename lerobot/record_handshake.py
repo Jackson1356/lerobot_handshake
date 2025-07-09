@@ -443,7 +443,7 @@ def record_handshake(cfg: HandshakeRecordConfig) -> LeRobotDataset:
 
     recorded_episodes = 0
     while recorded_episodes < cfg.dataset.num_episodes and not events["stop_recording"]:
-        log_say(f"Preparing to record handshake episode {dataset.num_episodes + 1}", cfg.play_sounds)
+        log_say(f"Preparing to record handshake episode {dataset.num_episodes}", cfg.play_sounds)
         
         # Wait for handshake detection before starting episode
         handshake_detected = wait_for_handshake_detection(
@@ -455,14 +455,14 @@ def record_handshake(cfg: HandshakeRecordConfig) -> LeRobotDataset:
             detection_delay=cfg.dataset.handshake_detection_delay,
             display_data=cfg.display_data,
             teleop=teleop,  # Enable teleop during waiting phase
-            episode_number=dataset.num_episodes + 1,
+            episode_number=dataset.num_episodes,
         )
         
         if not handshake_detected:
             log_say("Skipping episode due to handshake detection timeout", cfg.play_sounds)
             continue
         
-        log_say(f"Recording handshake episode {dataset.num_episodes + 1}", cfg.play_sounds)
+        log_say(f"Recording handshake episode {dataset.num_episodes}", cfg.play_sounds)
         record_handshake_loop(
             robot=robot,
             events=events,
@@ -475,7 +475,7 @@ def record_handshake(cfg: HandshakeRecordConfig) -> LeRobotDataset:
             control_time_s=cfg.dataset.episode_time_s,
             single_task=cfg.dataset.single_task,
             display_data=cfg.display_data,
-            episode_number=dataset.num_episodes + 1,
+            episode_number=dataset.num_episodes,
         )
 
         # Execute a few seconds without recording to give time to manually reset the environment
