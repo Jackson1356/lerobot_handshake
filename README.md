@@ -240,6 +240,15 @@ python -m lerobot.record_handshake \
 2. **Recording Phase**: You teleoperate the robot to perform the handshake
 3. **Reset Phase**: Time to reset positions between episodes
 
+### ⚠️ FPS Performance Note
+
+**Performance Warning**: The handshake detection (MediaPipe) can impact recording performance. If you experience dropped frames or inconsistent timing:
+
+- **Default**: Recording runs at 20 FPS for optimal stability
+- **Higher FPS**: If setting `fps=30`, expect some performance reduction (~20 actual FPS)
+- **Robot actions**: Always recorded at full precision regardless of camera FPS
+- **Detection frequency**: Handshake detection runs at reduced rate (every 3rd frame) to maintain performance
+
 ### Keyboard Controls During Recording
 
 - **⬅️ Left Arrow**: Re-record current episode (if something goes wrong)
