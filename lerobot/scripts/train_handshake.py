@@ -66,18 +66,38 @@ def compute_handshake_metrics(batch: dict) -> dict:
         handshake_data = batch["observation.handshake"]
         if isinstance(handshake_data, torch.Tensor):
             # handshake_data shape: [batch_size, 4] where 4 = [ready, confidence, pos_x, pos_y]
-            handshake_ready = handshake_data[:, 0]  # First column: ready (0 or 1)
-            handshake_confidence = handshake_data[:, 1]  # Second column: confidence (0-1)
+            # Only hand positions matter since recording only happens when handshake is ready
+            hand_position_x = handshake_data[:, 2]  # Target X position
+            hand_position_y = handshake_data[:, 3]  # Target Y position
             
-            # Percentage of frames where handshake was detected
-            metrics["handshake_detection_rate"] = handshake_ready.float().mean().item() * 100
-            # Average confidence of handshake detection
-            metrics["avg_handshake_confidence"] = handshake_confidence.mean().item()
+            # Filter valid hand positions (detection succeeded)
+            valid_positions = (hand_position_x >= 0) & (hand_position_y >= 0)
+            metrics["valid_hand_position_rate"] = valid_positions.float().mean().item() * 100
+            
+            if valid_positions.any():
+                # Only compute position stats for valid detections
+                valid_x = hand_position_x[valid_positions]
+                valid_y = hand_position_y[valid_positions]
+                
+                # Hand position distribution - tells us where people extend hands
+                metrics["avg_target_hand_x"] = valid_x.mean().item()
+                metrics["avg_target_hand_y"] = valid_y.mean().item()
+                metrics["hand_position_variance_x"] = valid_x.var().item()
+                metrics["hand_position_variance_y"] = valid_y.var().item()
+                
+                # Hand position diversity (important for robust training)
+                metrics["hand_x_range"] = (valid_x.max() - valid_x.min()).item()
+                metrics["hand_y_range"] = (valid_y.max() - valid_y.min()).item()
+            else:
+                # No valid positions in this batch
+                metrics["avg_target_hand_x"] = 0.0
+                metrics["avg_target_hand_y"] = 0.0
+                metrics["hand_position_variance_x"] = 0.0
+                metrics["hand_position_variance_y"] = 0.0
+                metrics["hand_x_range"] = 0.0
+                metrics["hand_y_range"] = 0.0
     
     return metrics
-
-
-
 
 
 def update_policy(
@@ -227,9 +247,14 @@ def train(cfg: TrainPipelineConfig):
         "lr": AverageMeter("lr", ":0.1e"),
         "update_s": AverageMeter("updt_s", ":.3f"),
         "dataloading_s": AverageMeter("data_s", ":.3f"),
-        # Handshake-specific metrics
-        "handshake_detection_rate": AverageMeter("hs_rate", ":.1f"),
-        "avg_handshake_confidence": AverageMeter("hs_conf", ":.3f"),
+        # Hand position metrics (the only relevant handshake data for training)
+        "valid_hand_position_rate": AverageMeter("valid_pos", ":.1f"),
+        "avg_target_hand_x": AverageMeter("tgt_x", ":.1f"),
+        "avg_target_hand_y": AverageMeter("tgt_y", ":.1f"),
+        "hand_position_variance_x": AverageMeter("var_x", ":.2f"),
+        "hand_position_variance_y": AverageMeter("var_y", ":.2f"),
+        "hand_x_range": AverageMeter("rng_x", ":.1f"),
+        "hand_y_range": AverageMeter("rng_y", ":.1f"),
     }
 
     train_tracker = MetricsTracker(
