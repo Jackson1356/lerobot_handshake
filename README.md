@@ -318,6 +318,32 @@ The training script includes handshake-specific metrics:
 
 ---
 
+## 📈 Visualizing Training Progress
+
+After training starts, monitor your model's progress with comprehensive visualization tools:
+
+```bash
+# Quick analysis with auto-detection
+python -m lerobot.scripts.example_visualize_training
+
+# Advanced visualization with specific paths
+python -m lerobot.scripts.visualize_handshake_training \
+    --source=logs/handshake_policy_v1 \
+    --output_dir=./training_analysis
+```
+
+### Visualization Features
+
+The training visualization system provides:
+- **📊 Training Dashboard**: Loss curves, learning rates, and gradient norms
+- **🤝 Handshake Analytics**: Hand position distributions, variance, and movement patterns
+- **🎯 Performance Metrics**: Valid hand position rates and target accuracy analysis
+- **📋 Automated Reports**: Summary statistics and training health indicators
+
+For complete usage instructions and metric interpretation, see: **[📖 Visualization Guide](lerobot/scripts/README_visualization.md)**
+
+---
+
 ## 🎮 Running Trained Policies
 
 Deploy your trained handshake policy:
