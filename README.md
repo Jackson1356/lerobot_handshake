@@ -267,24 +267,6 @@ python -m lerobot.scripts.visualize_dataset_html \
     --output-dir=./dataset_visualization
 ```
 
-This will generate an HTML page with:
-- **Episode thumbnails** showing key frames from each handshake
-- **Interactive timeline** to scrub through episodes
-- **Handshake detection visualization** overlaid on camera frames
-- **Robot joint positions** synchronized with camera data
-- **Episode statistics** including duration and detection rates
-
-### Advanced Visualization Options
-
-For more detailed analysis, you can also use the standard dataset visualization:
-
-```bash
-python -m lerobot.scripts.visualize_dataset \
-    --dataset.repo_id=your-username/handshake_dataset \
-    --episode-index=0 \
-    --save-video
-```
-
 ---
 
 ## 🔄 Replaying Handshake Datasets
