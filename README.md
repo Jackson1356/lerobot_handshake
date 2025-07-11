@@ -297,7 +297,7 @@ The replay script will:
 
 ### How Handshake Training Works
 
-Our training pipeline extends the standard LeRobot workflow with **4 additional handshake features** that capture human hand information:
+Our training pipeline extends the [standard LeRobot workflow](https://huggingface.co/docs/lerobot/notebooks#training-act) with **4 additional handshake features** that capture human hand information:
 
 | **Feature** | **Standard Pipeline** | **Handshake Pipeline** |
 |-------------|----------------------|-------------------------|
