@@ -378,6 +378,8 @@ python -m lerobot.scripts.eval_handshake \
     --robot.id=my_follower_arm \
     --robot.cameras='{"front": {"type": "opencv", "index_or_path": "/dev/video1", "width": 640, "height": 480, "fps": 30}}' \
     --eval.num_episodes=10 \
+    --eval.episode_time_s=30 \
+    --eval.handshake_timeout_s=15 \
     --display_data=true
 ```
 
@@ -392,6 +394,7 @@ lerobot_handshake/
 ├── lerobot/
 │   ├── record_handshake.py         # 🎬 Custom recording script for handshake data
 │   ├── test_handshake.py           # 🔍 Test handshake detection with camera
+│   ├── teleoperate.py              # 🕹️ Teleoperate robot arms
 │   ├── scripts/
 │   │   ├── train_handshake.py      # 🎓 Custom training script with handshake metrics
 │   │   └── eval_handshake.py       # 🎮 Evaluate trained handshake policies

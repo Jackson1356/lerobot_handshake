@@ -54,10 +54,11 @@ class HandshakeEvalConfig:
     """Configuration for handshake policy evaluation."""
     num_episodes: int = 10
     episode_time_s: float = 30.0
-    handshake_timeout_s: float = 15.0
+    handshake_timeout_s: float = 10.0
     handshake_confidence_threshold: float = 0.8
     handshake_detection_delay: float = 1.0
-    fps: int = 30
+    fps: int = 20
+    handshake_detection_fps: int = 10
 
 
 @dataclass
@@ -135,20 +136,25 @@ def wait_for_handshake_detection(
                     rr.log("status", rr.TextLog(status_text, level=rr.TextLogLevel.INFO))
                     last_status_update = current_time
                 
-                # Log robot state and camera feed
-                annotated_frame = detection_result.get('annotated_frame')
+                # Robot joint positions (6 values only) - grouped in single chart
                 robot_joints = {}
                 for obs, val in observation.items():
                     if isinstance(val, float) and obs.endswith('.pos'):
+                        # Collect all robot joint positions for single chart
                         robot_joints[obs] = val
                     elif isinstance(val, np.ndarray):
                         if obs == camera_name and annotated_frame is not None:
+                            # Camera with pose detection - consistent path
                             rr.log("camera_with_pose", rr.Image(annotated_frame), static=True)
+                            # Raw camera - consistent path
                             rr.log("camera_raw", rr.Image(val), static=True)
                         else:
+                            # Raw camera for other cameras
                             rr.log("camera_raw", rr.Image(val), static=True)
                 
+                # Log all robot joints as single chart
                 if robot_joints:
+                    # Log each joint individually to create clean grouped chart
                     for joint_name, joint_val in robot_joints.items():
                         rr.log(f"robot_joints/{joint_name}", rr.Scalar(joint_val))
             
@@ -172,6 +178,8 @@ def evaluate_handshake_episode(
     handshake_detector: ImprovedHandshakeDetector,
     main_camera_name: str,
     episode_time_s: float,
+    fps: int,
+    handshake_detection_fps: int,
     display_data: bool = False,
     episode_ix: int = 0,
 ) -> dict[str, Any]:
@@ -200,8 +208,13 @@ def evaluate_handshake_episode(
     
     timestamp = 0
     step = 0
-    max_steps = int(episode_time_s * 30)  # Assume ~30 FPS
+    frame_count = 0
+    max_steps = int(episode_time_s * fps)
     last_status_update = 0
+    
+    # Handshake detection optimization - run at lower frequency
+    detection_interval = max(1, fps // handshake_detection_fps)  # Run detection every N frames
+    last_handshake_result = None
     
     while step < max_steps:
         step_start_time = time.perf_counter()
@@ -212,11 +225,21 @@ def evaluate_handshake_episode(
         if main_camera_name not in observation:
             continue
             
-        frame = observation[main_camera_name]
-        
-        # Run handshake detection
-        detection_result = handshake_detector.detect_handshake_gesture(frame, visualize=display_data)
-        handshake_confidences.append(detection_result['confidence'])
+        # Run handshake detection at reduced frequency for better performance
+        if main_camera_name in observation:
+            # Only run detection every N frames to improve FPS
+            if frame_count % detection_interval == 0:
+                frame = observation[main_camera_name]
+                last_handshake_result = handshake_detector.detect_handshake_gesture(frame, visualize=True)
+            
+            # Use cached result (either fresh or from previous frame)
+            if last_handshake_result is not None:
+                detection_result = last_handshake_result
+                handshake_confidences.append(detection_result['confidence'])
+            else:
+                # Fallback if no detection result yet
+                detection_result = {'ready': False, 'confidence': 0.0, 'hand_position': None}
+                handshake_confidences.append(0.0)
         
         # Add handshake features to observation (same as record_handshake.py)
         handshake_ready = float(detection_result['ready'])
@@ -256,36 +279,83 @@ def evaluate_handshake_episode(
         timestamps.append(time.perf_counter() - episode_start_time)
         
         if display_data:
-            # Update status every second
+            # Update status every second 
             current_time = time.perf_counter()
             if current_time - last_status_update >= 1.0:
-                status_text = f"EVALUATING | Episode: {episode_ix} | Elapsed: {timestamp:.1f}s | Remaining: {episode_time_s - timestamp:.1f}s"
+                # Calculate actual FPS
+                actual_fps = frame_count / timestamp if timestamp > 0 else 0
+                status_text = f"EVALUATING | Episode: {episode_ix} | Elapsed: {timestamp:.1f}s | Remaining: {episode_time_s - timestamp:.1f}s | Actual FPS: {actual_fps:.1f}"
                 rr.log("status", rr.TextLog(status_text, level=rr.TextLogLevel.INFO))
                 last_status_update = current_time
             
-            # Log robot state and camera feed
-            annotated_frame = detection_result.get('annotated_frame')
+            # Get pose overlay for camera feed using cached result
+            annotated_frame = None
+            if main_camera_name in observation and last_handshake_result and 'annotated_frame' in last_handshake_result:
+                annotated_frame = last_handshake_result['annotated_frame']
+            
+            # Robot joint positions (6 values only) - grouped in single chart
             robot_joints = {}
             for obs, val in observation.items():
                 if isinstance(val, float) and obs.endswith('.pos'):
+                    # Collect all robot joint positions for single chart
                     robot_joints[obs] = val
                 elif isinstance(val, np.ndarray):
                     if obs == main_camera_name and annotated_frame is not None:
+                        # Camera with pose detection - consistent path
                         rr.log("camera_with_pose", rr.Image(annotated_frame), static=True)
+                        # Raw camera - consistent path
                         rr.log("camera_raw", rr.Image(val), static=True)
                     else:
+                        # Raw camera for other cameras
                         rr.log("camera_raw", rr.Image(val), static=True)
             
+            # Log all robot joints as single chart
             if robot_joints:
+                # Log each joint individually to create clean grouped chart
+                for joint_name, joint_val in robot_joints.items():
+                    rr.log(f"robot_joints/{joint_name}", rr.Scalar(joint_val))
+            
+            # Actions are sent to robot but NOT displayed in charts to keep it clean (6 values only)
+        
+        if display_data:
+            # Update status every second 
+            current_time = time.perf_counter()
+            if current_time - last_status_update >= 1.0:
+                # Calculate actual FPS
+                actual_fps = frame_count / timestamp if timestamp > 0 else 0
+                status_text = f"EVALUATING | Episode: {episode_ix} | Elapsed: {timestamp:.1f}s | Remaining: {episode_time_s - timestamp:.1f}s | Actual FPS: {actual_fps:.1f}"
+                rr.log("status", rr.TextLog(status_text, level=rr.TextLogLevel.INFO))
+                last_status_update = current_time
+            
+            # Robot joint positions (6 values only) - grouped in single chart
+            robot_joints = {}
+            for obs, val in observation.items():
+                if isinstance(val, float) and obs.endswith('.pos'):
+                    # Collect all robot joint positions for single chart
+                    robot_joints[obs] = val
+                elif isinstance(val, np.ndarray):
+                    if obs == main_camera_name and annotated_frame is not None:
+                        # Camera with pose detection - consistent path
+                        rr.log("camera_with_pose", rr.Image(annotated_frame), static=True)
+                        # Raw camera - consistent path
+                        rr.log("camera_raw", rr.Image(val), static=True)
+                    else:
+                        # Raw camera for other cameras
+                        rr.log("camera_raw", rr.Image(val), static=True)
+            
+            # Log all robot joints as single chart
+            if robot_joints:
+                # Log each joint individually to create clean grouped chart
                 for joint_name, joint_val in robot_joints.items():
                     rr.log(f"robot_joints/{joint_name}", rr.Scalar(joint_val))
 
         step += 1
+        frame_count += 1
         
-        # Control loop timing (aim for ~30 FPS)
+        # Control loop timing (aim for recording fps)
         elapsed = time.perf_counter() - step_start_time
-        if elapsed < 1/30:
-            time.sleep(1/30 - elapsed)
+        if elapsed < 1/fps:
+            time.sleep(1/fps - elapsed)
         
         timestamp = time.perf_counter() - episode_start_time
     
@@ -376,6 +446,8 @@ def eval_handshake(cfg: HandshakeEvalPipelineConfig):
             handshake_detector=handshake_detector,
             main_camera_name=main_camera_name,
             episode_time_s=cfg.eval.episode_time_s,
+            fps=cfg.eval.fps,
+            handshake_detection_fps=cfg.eval.handshake_detection_fps,
             display_data=cfg.display_data,
             episode_ix=episode_ix,
         )
