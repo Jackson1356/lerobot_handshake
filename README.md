@@ -295,6 +295,27 @@ The replay script will:
 
 ## 🎓 Training Handshake Policies
 
+### How Handshake Training Works
+
+Our training pipeline extends the standard LeRobot workflow with **4 additional handshake features** that capture human hand information:
+
+| **Feature** | **Standard Pipeline** | **Handshake Pipeline** |
+|-------------|----------------------|-------------------------|
+| **Robot State** | Joint positions only (6D) | Joint positions + handshake data (10D) |
+| **Handshake Features** | None | `[ready, confidence, pos_x, pos_y]` |
+| **Policy Input** | Camera + robot state | Camera + robot state + hand tracking |
+| **Learning** | Robot motions only | Robot motions + human hand correlations |
+
+**Key Differences:**
+- **Enhanced State Space**: The robot now observes where human hands are located, not just its own joint positions
+- **Behavioral Cloning**: Standard imitation learning approach - no custom loss functions needed
+- **Implicit Hand Learning**: The ACT policy learns to correlate hand positions with appropriate reaching behaviors
+- **Real-time Adaptation**: During deployment, the robot can adjust its movements based on live hand detection
+
+**Currently Supported Policies:** Only **ACT (Action Chunking Transformer)** is supported for handshake training. The ACT architecture naturally handles the expanded state space by encoding handshake features alongside robot proprioception.
+
+### Training Command
+
 Train your robot using the specialized training script:
 
 ```bash
@@ -312,8 +333,9 @@ python -m lerobot.scripts.train_handshake \
 ### Training Features
 
 The training script includes handshake-specific metrics:
-- **Detection Rate**: Percentage of frames where handshake was detected
-- **Average Confidence**: Mean confidence score of handshake detection  
+- **Valid Hand Position Rate**: Percentage of training data with successful hand detection
+- **Hand Position Distribution**: Where people typically extend their hands for handshakes
+- **Training Diversity**: Range and variance of hand positions (crucial for robust learning)
 - **Standard Training Metrics**: Loss, gradient norms, learning rates
 
 ---
