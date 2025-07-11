@@ -6,7 +6,7 @@ It expects datasets recorded with record_handshake.py and adds handshake-specifi
 
 Example usage:
 
-```bash
+```shell
 python -m lerobot.scripts.train_handshake \
     --dataset.repo_id=your-username/handshake_dataset \
     --policy.type=act \

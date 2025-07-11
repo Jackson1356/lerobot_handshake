@@ -368,16 +368,39 @@ For complete usage instructions and metric interpretation, see: **[📖 Visualiz
 
 ## 🎮 Running Trained Policies
 
-Deploy your trained handshake policy:
+### Handshake Policy Evaluation
+
+After training your handshake policy, evaluate its performance with real human interactions using our specialized evaluation script. Unlike standard robot evaluation that runs in simulation, handshake evaluation requires:
+
+- **Real robot hardware** to perform actual handshakes
+- **Live handshake detection** to trigger evaluation episodes  
+- **Human interaction** for each test episode
+- **Handshake-specific metrics** including success rates and confidence levels
+
+The evaluation process:
+1. **Waits for human** to extend their hand (handshake detection)
+2. **Runs trained policy** with same 4 handshake features as training
+3. **Records interaction** and calculates handshake-specific success metrics
+4. **Saves videos** of successful handshake attempts for analysis
+
+### Evaluation Command
 
 ```bash
-python -m lerobot.scripts.eval \
-    --policy.name=handshake_policy_v1 \
+python -m lerobot.scripts.eval_handshake \
+    --policy.path=outputs/train/your_username/checkpoints/last/pretrained_model \
     --robot.type=so101_follower \
-    --robot.port=/dev/ttyACM0 \
-    --robot.cameras='{"front": {"type": "opencv", "index_or_path": /dev/video1, "width": 640, "height": 480, "fps": 30}}' \
-    --eval.num_episodes=10
+    --robot.port=/dev/ttyACM1 \
+    --robot.id=my_follower_arm \
+    --robot.cameras='{"front": {"type": "opencv", "index_or_path": "/dev/video1", "width": 640, "height": 480, "fps": 30}}' \
+    --eval.n_episodes=10 \
+    --eval.handshake_timeout_s=15.0 \
+    --eval.episode_time_s=10.0 \
+    --output_dir=./eval_results \
+    --save_video=true \
+    --display_data=true
 ```
+
+**Expected Results:** The script will output success rates, average handshake confidence scores, hand position analysis, and save videos of interactions to help you understand your policy's performance.
 
 ---
 
