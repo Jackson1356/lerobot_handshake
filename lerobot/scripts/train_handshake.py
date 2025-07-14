@@ -12,6 +12,7 @@ python -m lerobot.scripts.train_handshake \
     --policy.type=act \
     --policy.n_obs_steps=1 \
     --policy.chunk_size=100 \
+    --policy.push_to_hub=false \
     --batch_size=8 \
     --steps=50000
 ```
