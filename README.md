@@ -326,8 +326,7 @@ python -m lerobot.scripts.train_handshake \
     --policy.chunk_size=100 \
     --training.lr=1e-5 \
     --training.batch_size=8 \
-    --training.num_epochs=500 \
-    --save.run_name=handshake_policy_v1
+    --training.num_epochs=500
 ```
 
 ### Training Features
