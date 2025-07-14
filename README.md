@@ -324,9 +324,8 @@ python -m lerobot.scripts.train_handshake \
     --policy.type=act \
     --policy.n_obs_steps=1 \
     --policy.chunk_size=100 \
-    --training.lr=1e-5 \
-    --training.batch_size=8 \
-    --training.num_epochs=500
+    --batch_size=8 \
+    --steps=50000
 ```
 
 ### Training Features
