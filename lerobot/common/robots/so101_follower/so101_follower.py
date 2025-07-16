@@ -91,6 +91,7 @@ class SO101Follower(Robot):
             raise DeviceAlreadyConnectedError(f"{self} already connected")
 
         self.bus.connect()
+        time.sleep(1)
         if self.calibration:  # Calibration file was loaded
             self.bus.write_calibration(self.calibration)
         elif calibrate:
