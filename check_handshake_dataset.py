@@ -1,20 +1,20 @@
 #!/usr/bin/env python3
 """
 Check handshake dataset to see what data is actually saved.
+
+Example usage:
+python -m check_handshake_dataset --dataset.repo_id=your-username/handshake_dataset
 """
 
 import torch
 from lerobot.common.datasets.factory import make_dataset
+from lerobot.configs import parser
 from lerobot.configs.train import TrainPipelineConfig
 
-def check_handshake_dataset(dataset_path):
+def check_handshake_dataset(cfg: TrainPipelineConfig):
     """Check what handshake data is actually in the dataset."""
     
-    print(f"Checking dataset: {dataset_path}")
-    
-    # Create config
-    cfg = TrainPipelineConfig()
-    cfg.dataset.repo_id = dataset_path
+    print(f"Checking dataset: {cfg.dataset.repo_id}")
     
     try:
         # Load dataset
@@ -100,7 +100,10 @@ def check_handshake_dataset(dataset_path):
         print(f"❌ Error loading dataset: {e}")
         print("Make sure the dataset path is correct and the dataset exists.")
 
+@parser.wrap()
+def main(cfg: TrainPipelineConfig):
+    """Main function to check handshake dataset."""
+    check_handshake_dataset(cfg)
+
 if __name__ == "__main__":
-    # Replace with your actual dataset path
-    dataset_path = "your-username/handshake_dataset"
-    check_handshake_dataset(dataset_path) 
+    main() 
