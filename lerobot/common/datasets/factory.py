@@ -82,8 +82,25 @@ def make_dataset(cfg: TrainPipelineConfig) -> LeRobotDataset | MultiLeRobotDatas
         ImageTransforms(cfg.dataset.image_transforms) if cfg.dataset.image_transforms.enable else None
     )
 
-    if isinstance(cfg.dataset.repo_id, str):
-        # Hugging Face dataset
+    # Handle local datasets (repo_id is None, root is specified)
+    if cfg.dataset.repo_id is None and cfg.dataset.root is not None:
+        # For local datasets, use a dummy repo_id
+        dummy_repo_id = "local_dataset"
+        ds_meta = LeRobotDatasetMetadata(
+            dummy_repo_id, root=cfg.dataset.root, revision=cfg.dataset.revision
+        )
+        delta_timestamps = resolve_delta_timestamps(cfg.policy, ds_meta)
+        dataset = LeRobotDataset(
+            dummy_repo_id,
+            root=cfg.dataset.root,
+            episodes=cfg.dataset.episodes,
+            delta_timestamps=delta_timestamps,
+            image_transforms=image_transforms,
+            revision=cfg.dataset.revision,
+            video_backend=cfg.dataset.video_backend,
+        )
+    elif isinstance(cfg.dataset.repo_id, str):
+        # Handle HuggingFace datasets
         ds_meta = LeRobotDatasetMetadata(
             cfg.dataset.repo_id, root=cfg.dataset.root, revision=cfg.dataset.revision
         )
@@ -95,21 +112,6 @@ def make_dataset(cfg: TrainPipelineConfig) -> LeRobotDataset | MultiLeRobotDatas
             delta_timestamps=delta_timestamps,
             image_transforms=image_transforms,
             revision=cfg.dataset.revision,
-            video_backend=cfg.dataset.video_backend,
-        )
-    elif cfg.dataset.repo_id is None and cfg.dataset.root is not None:
-        # Local dataset - load directly from root
-        if cfg.policy is None:
-            # Create minimal policy config for local datasets
-            from lerobot.configs.policies import PreTrainedConfig
-            cfg.policy = PreTrainedConfig()
-        
-        dataset = LeRobotDataset(
-            repo_id="local_dataset",  # Dummy repo_id for local dataset
-            root=cfg.dataset.root,
-            episodes=cfg.dataset.episodes,
-            delta_timestamps=None,  # No delta timestamps for local datasets
-            image_transforms=image_transforms,
             video_backend=cfg.dataset.video_backend,
         )
     else:

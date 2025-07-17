@@ -29,7 +29,6 @@ class DatasetConfig:
     # keys common between the datasets are kept. Each dataset gets and additional transform that inserts the
     # "dataset_index" into the returned item. The index mapping is made according to the order in which the
     # datasets are provided.
-    # For local datasets, you can omit repo_id and just use root
     repo_id: str | None = None
     # Root directory where the dataset will be stored (e.g. 'dataset/path').
     root: str | None = None
@@ -38,6 +37,11 @@ class DatasetConfig:
     revision: str | None = None
     use_imagenet_stats: bool = True
     video_backend: str = field(default_factory=get_safe_default_codec)
+    
+    def __post_init__(self):
+        # For local datasets, repo_id is optional but root is required
+        if self.repo_id is None and self.root is None:
+            raise ValueError("Either repo_id (for HuggingFace datasets) or root (for local datasets) must be specified")
 
 
 @dataclass

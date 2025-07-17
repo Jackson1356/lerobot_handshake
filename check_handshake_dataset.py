@@ -17,7 +17,7 @@ def check_handshake_dataset(cfg: TrainPipelineConfig):
     print(f"Checking dataset at: {cfg.dataset.root}")
     
     try:
-        # Load dataset using the factory function
+        # Load dataset using the standard factory function
         dataset = make_dataset(cfg)
         print(f"✓ Dataset loaded successfully")
         print(f"  - Episodes: {dataset.num_episodes}")
