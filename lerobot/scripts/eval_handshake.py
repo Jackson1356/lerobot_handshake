@@ -109,13 +109,13 @@ def wait_for_handshake_detection(
     
     while time.perf_counter() - start_time < timeout_s:
         try:
-        observation = robot.get_observation()
+            observation = robot.get_observation()
             frame = observation[camera_name]
             
             # Detect handshake gesture
             detection_result = handshake_detector.detect_handshake_gesture(frame, visualize=True)
         
-        if detection_result['ready'] and detection_result['confidence'] >= confidence_threshold:
+            if detection_result['ready'] and detection_result['confidence'] >= confidence_threshold:
                 if detection_start_time is None:
                     detection_start_time = time.perf_counter()
                     log_say(f"Handshake detected! Waiting {detection_delay} seconds before starting evaluation...", True)
@@ -124,9 +124,9 @@ def wait_for_handshake_detection(
                 if time.perf_counter() - detection_start_time >= detection_delay:
                     log_say("Starting handshake evaluation now!", True)
                     return True
-            else:
-                # Reset detection timer if gesture is lost
-                detection_start_time = None
+                else:
+                    # Reset detection timer if gesture is lost
+                    detection_start_time = None
             
             if display_data:
                 # Update status every second
@@ -229,13 +229,13 @@ def evaluate_handshake_episode(
         if main_camera_name in observation:
             # Only run detection every N frames to improve FPS
             if frame_count % detection_interval == 0:
-        frame = observation[main_camera_name]
+                frame = observation[main_camera_name]
                 last_handshake_result = handshake_detector.detect_handshake_gesture(frame, visualize=True)
         
             # Use cached result (either fresh or from previous frame)
             if last_handshake_result is not None:
                 detection_result = last_handshake_result
-        handshake_confidences.append(detection_result['confidence'])
+                handshake_confidences.append(detection_result['confidence'])
             else:
                 # Fallback if no detection result yet
                 detection_result = {'ready': False, 'confidence': 0.0, 'hand_position': None}
@@ -306,8 +306,8 @@ def evaluate_handshake_episode(
                         # Raw camera - consistent path
                         rr.log("camera_raw", rr.Image(val), static=True)
         else:
-                        # Raw camera for other cameras
-                        rr.log("camera_raw", rr.Image(val), static=True)
+            # Raw camera for other cameras
+            rr.log("camera_raw", rr.Image(val), static=True)
             
             # Log all robot joints as single chart
             if robot_joints:
@@ -415,7 +415,7 @@ def eval_handshake(cfg: HandshakeEvalPipelineConfig):
     # Load trained policy
     logging.info("Loading trained handshake policy")
     policy = make_policy(cfg=cfg.policy, env_cfg=None)
-        policy.eval()
+    policy.eval()
 
         # Run evaluation episodes
     episode_results = []

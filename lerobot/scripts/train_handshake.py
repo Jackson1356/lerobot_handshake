@@ -179,7 +179,13 @@ def train(cfg: TrainPipelineConfig):
     torch.backends.cuda.matmul.allow_tf32 = True
 
     logging.info("Creating dataset")
-    dataset = make_dataset(cfg)
+    # Load dataset directly to avoid delta timestamps issues with handshake data
+    dataset = LeRobotDataset(
+        cfg.dataset.repo_id,
+        root=cfg.dataset.root,
+        episodes=cfg.dataset.episodes,
+        revision=cfg.dataset.revision,
+    )
 
     # Create environment used for evaluating checkpoints during training on simulation data.
     # On real-world data, no need to create an environment as evaluations are done outside train.py,
