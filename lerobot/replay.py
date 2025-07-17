@@ -22,7 +22,7 @@ python -m lerobot.replay \
     --robot.type=so100_follower \
     --robot.port=/dev/tty.usbmodem58760431541 \
     --robot.id=black \
-    --dataset.repo_id=aliberts/record-test \
+    --dataset.root=./data/folder_path/handshake_dataset \
     --dataset.episode=2
 ```
 """

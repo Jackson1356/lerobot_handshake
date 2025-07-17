@@ -30,7 +30,7 @@ Example of usage:
 - Visualize data stored on a local machine:
 ```bash
 python -m lerobot.scripts.visualize_dataset_html \
-    --repo-id=your-username/handshake_dataset
+    --root=./data/folder_path/handshake_dataset
 
 local$ open http://localhost:9090
 ```
@@ -38,7 +38,7 @@ local$ open http://localhost:9090
 - Select episodes to visualize:
 ```bash
 python -m lerobot.scripts.visualize_dataset_html \
-    --repo-id=your-username/handshake_dataset \
+    --root=./data/folder_path/handshake_dataset \
     --episodes 7 3 5 1 4
 ```
 """
@@ -299,10 +299,10 @@ def main():
     parser = argparse.ArgumentParser()
 
     parser.add_argument(
-        "--repo-id",
+        "--root",
         type=str,
         required=True,
-        help="Local dataset folder path (e.g. `your-username/handshake_dataset`).",
+        help="Local dataset folder path (e.g. `./data/your_username/handshake_dataset`).",
     )
     parser.add_argument(
         "--episodes",
@@ -343,10 +343,10 @@ def main():
 
     args = parser.parse_args()
     kwargs = vars(args)
-    repo_id = kwargs.pop("repo_id")
+    root = kwargs.pop("root")
     tolerance_s = kwargs.pop("tolerance_s")
 
-    dataset = LeRobotDataset(repo_id=repo_id, tolerance_s=tolerance_s)
+    dataset = LeRobotDataset(repo_id="local_dataset", root=root, tolerance_s=tolerance_s)
 
     visualize_dataset_html(dataset, **vars(args))
 

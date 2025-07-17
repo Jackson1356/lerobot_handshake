@@ -16,7 +16,7 @@ python -m lerobot.record_handshake \
     --teleop.type=so101_leader \
     --teleop.port=/dev/ttyACM0 \
     --teleop.id=my_leader_arm \
-    --dataset.repo_id=your_username/handshake_dataset \
+    --dataset.root=./data/folder_name/handshake_dataset \
     --dataset.num_episodes=10 \
     --dataset.single_task="Shake hands with person when they extend their hand" \
     --dataset.episode_time_s=30 \      # 30-second recording episodes \

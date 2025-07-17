@@ -3,7 +3,7 @@
 Check handshake dataset to see what data is actually saved.
 
 Example usage:
-python -m check_handshake_dataset --dataset.repo_id=your-username/handshake_dataset
+python -m check_handshake_dataset --dataset.root=./data/folder_name/handshake_dataset
 """
 
 import torch
@@ -14,11 +14,15 @@ from lerobot.configs.train import TrainPipelineConfig
 def check_handshake_dataset(cfg: TrainPipelineConfig):
     """Check what handshake data is actually in the dataset."""
     
-    print(f"Checking dataset: {cfg.dataset.repo_id}")
+    print(f"Checking dataset at: {cfg.dataset.root}")
     
     try:
-        # Load dataset
-        dataset = make_dataset(cfg)
+        # For local datasets, load directly from the root path
+        from lerobot.common.datasets.lerobot_dataset import LeRobotDataset
+        dataset = LeRobotDataset(
+            repo_id="local_dataset",  # Dummy repo_id for local dataset
+            root=cfg.dataset.root,
+        )
         print(f"✓ Dataset loaded successfully")
         print(f"  - Episodes: {dataset.num_episodes}")
         print(f"  - Frames: {dataset.num_frames}")
