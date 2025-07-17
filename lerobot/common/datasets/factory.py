@@ -83,6 +83,7 @@ def make_dataset(cfg: TrainPipelineConfig) -> LeRobotDataset | MultiLeRobotDatas
     )
 
     if isinstance(cfg.dataset.repo_id, str):
+        # Hugging Face dataset
         ds_meta = LeRobotDatasetMetadata(
             cfg.dataset.repo_id, root=cfg.dataset.root, revision=cfg.dataset.revision
         )
@@ -94,6 +95,21 @@ def make_dataset(cfg: TrainPipelineConfig) -> LeRobotDataset | MultiLeRobotDatas
             delta_timestamps=delta_timestamps,
             image_transforms=image_transforms,
             revision=cfg.dataset.revision,
+            video_backend=cfg.dataset.video_backend,
+        )
+    elif cfg.dataset.repo_id is None and cfg.dataset.root is not None:
+        # Local dataset - load directly from root
+        if cfg.policy is None:
+            # Create minimal policy config for local datasets
+            from lerobot.configs.policies import PreTrainedConfig
+            cfg.policy = PreTrainedConfig()
+        
+        dataset = LeRobotDataset(
+            repo_id="local_dataset",  # Dummy repo_id for local dataset
+            root=cfg.dataset.root,
+            episodes=cfg.dataset.episodes,
+            delta_timestamps=None,  # No delta timestamps for local datasets
+            image_transforms=image_transforms,
             video_backend=cfg.dataset.video_backend,
         )
     else:

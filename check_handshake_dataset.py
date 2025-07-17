@@ -17,12 +17,8 @@ def check_handshake_dataset(cfg: TrainPipelineConfig):
     print(f"Checking dataset at: {cfg.dataset.root}")
     
     try:
-        # For local datasets, load directly from the root path
-        from lerobot.common.datasets.lerobot_dataset import LeRobotDataset
-        dataset = LeRobotDataset(
-            repo_id="local_dataset",  # Dummy repo_id for local dataset
-            root=cfg.dataset.root,
-        )
+        # Load dataset using the factory function
+        dataset = make_dataset(cfg)
         print(f"✓ Dataset loaded successfully")
         print(f"  - Episodes: {dataset.num_episodes}")
         print(f"  - Frames: {dataset.num_frames}")
