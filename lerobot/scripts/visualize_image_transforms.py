@@ -106,27 +106,14 @@ def save_each_transform(cfg: ImageTransformsConfig, original_frame, output_dir, 
 
 @draccus.wrap()
 def visualize_image_transforms(cfg: DatasetConfig, output_dir: Path = OUTPUT_DIR, n_examples: int = 5):
-    # Handle local datasets (repo_id is None, root is specified)
-    if cfg.repo_id is None and cfg.root is not None:
-        repo_id = "local_dataset"  # Dummy repo_id for local dataset
-    else:
-        repo_id = cfg.repo_id
-    
     dataset = LeRobotDataset(
-        repo_id=repo_id,
-        root=cfg.root,
+        repo_id=cfg.repo_id,
         episodes=cfg.episodes,
         revision=cfg.revision,
         video_backend=cfg.video_backend,
     )
 
-    # Use dataset name for output directory
-    if cfg.repo_id is not None:
-        dataset_name = cfg.repo_id.split("/")[-1]
-    else:
-        dataset_name = "local_dataset"
-    
-    output_dir = output_dir / dataset_name
+    output_dir = output_dir / cfg.repo_id.split("/")[-1]
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Get 1st frame from 1st camera of 1st episode

@@ -70,7 +70,7 @@ class HandshakeEvalPipelineConfig:
     display_data: bool = False
     device: str = "cuda"
     seed: int | None = None
-
+    
     def __post_init__(self):
         # Parse policy from CLI if provided
         policy_path = parser.get_path_arg("policy")
@@ -78,7 +78,7 @@ class HandshakeEvalPipelineConfig:
             cli_overrides = parser.get_cli_overrides("policy")
             self.policy = PreTrainedConfig.from_pretrained(policy_path, cli_overrides=cli_overrides)
             self.policy.pretrained_path = policy_path
-
+    
     @classmethod
     def __get_path_fields__(cls) -> list[str]:
         """This enables the parser to load config from the policy using `--policy.path=local/dir`"""
@@ -86,7 +86,7 @@ class HandshakeEvalPipelineConfig:
 
 
 def wait_for_handshake_detection(
-    robot: Robot,
+    robot: Robot, 
     handshake_detector: ImprovedHandshakeDetector,
     camera_name: str,
     timeout_s: float,
@@ -109,13 +109,13 @@ def wait_for_handshake_detection(
     
     while time.perf_counter() - start_time < timeout_s:
         try:
-            observation = robot.get_observation()
+        observation = robot.get_observation()
             frame = observation[camera_name]
             
             # Detect handshake gesture
             detection_result = handshake_detector.detect_handshake_gesture(frame, visualize=True)
-            
-            if detection_result['ready'] and detection_result['confidence'] >= confidence_threshold:
+        
+        if detection_result['ready'] and detection_result['confidence'] >= confidence_threshold:
                 if detection_start_time is None:
                     detection_start_time = time.perf_counter()
                     log_say(f"Handshake detected! Waiting {detection_delay} seconds before starting evaluation...", True)
@@ -157,7 +157,7 @@ def wait_for_handshake_detection(
                     # Log each joint individually to create clean grouped chart
                     for joint_name, joint_val in robot_joints.items():
                         rr.log(f"robot_joints/{joint_name}", rr.Scalar(joint_val))
-            
+                
             time.sleep(0.1)  # Small delay to prevent excessive CPU usage
             
         except KeyboardInterrupt:
@@ -229,13 +229,13 @@ def evaluate_handshake_episode(
         if main_camera_name in observation:
             # Only run detection every N frames to improve FPS
             if frame_count % detection_interval == 0:
-                frame = observation[main_camera_name]
+        frame = observation[main_camera_name]
                 last_handshake_result = handshake_detector.detect_handshake_gesture(frame, visualize=True)
-            
+        
             # Use cached result (either fresh or from previous frame)
             if last_handshake_result is not None:
                 detection_result = last_handshake_result
-                handshake_confidences.append(detection_result['confidence'])
+        handshake_confidences.append(detection_result['confidence'])
             else:
                 # Fallback if no detection result yet
                 detection_result = {'ready': False, 'confidence': 0.0, 'hand_position': None}
@@ -305,7 +305,7 @@ def evaluate_handshake_episode(
                         rr.log("camera_with_pose", rr.Image(annotated_frame), static=True)
                         # Raw camera - consistent path
                         rr.log("camera_raw", rr.Image(val), static=True)
-                    else:
+        else:
                         # Raw camera for other cameras
                         rr.log("camera_raw", rr.Image(val), static=True)
             
@@ -314,7 +314,7 @@ def evaluate_handshake_episode(
                 # Log each joint individually to create clean grouped chart
                 for joint_name, joint_val in robot_joints.items():
                     rr.log(f"robot_joints/{joint_name}", rr.Scalar(joint_val))
-            
+        
             # Actions are sent to robot but NOT displayed in charts to keep it clean (6 values only)
         
         if display_data:
@@ -382,7 +382,7 @@ def eval_handshake(cfg: HandshakeEvalPipelineConfig):
     """Main evaluation function for handshake policies."""
     init_logging()
     logging.info(pformat(asdict(cfg)))
-    
+
     # Initialize Rerun for visualization if requested
     if cfg.display_data:
         _init_rerun(session_name="handshake_evaluation")
@@ -415,8 +415,8 @@ def eval_handshake(cfg: HandshakeEvalPipelineConfig):
     # Load trained policy
     logging.info("Loading trained handshake policy")
     policy = make_policy(cfg=cfg.policy, env_cfg=None)
-    policy.eval()
-    
+        policy.eval()
+
         # Run evaluation episodes
     episode_results = []
     

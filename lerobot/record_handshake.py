@@ -79,7 +79,7 @@ from lerobot.configs.policies import PreTrainedConfig
 
 @dataclass
 class HandshakeDatasetRecordConfig:
-    repo_id: str | None = None
+    repo_id: str
     single_task: str
     root: str | Path | None = None
     fps: int = 20
@@ -99,9 +99,6 @@ class HandshakeDatasetRecordConfig:
     def __post_init__(self):
         if self.single_task is None:
             raise ValueError("You need to provide a task as argument in `single_task`.")
-        # For local datasets, repo_id is optional but root is required
-        if self.repo_id is None and self.root is None:
-            raise ValueError("Either repo_id (for HuggingFace datasets) or root (for local datasets) must be specified")
 
 
 @dataclass

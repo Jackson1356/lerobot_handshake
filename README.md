@@ -226,7 +226,7 @@ python -m lerobot.record_handshake \
     --teleop.port=/dev/ttyACM0 \
     --teleop.id=my_leader_arm \
     --robot.cameras='{"front": {"type": "opencv", "index_or_path": /dev/video1, "width": 640, "height": 480, "fps": 30}}' \
-    --dataset.root=./data/folder_path/handshake_dataset \
+    --dataset.repo_id=your_username/handshake_dataset \
     --dataset.num_episodes=10 \
     --dataset.single_task="Shake hands with person when they extend their hand" \
     --dataset.episode_time_s=30 \
@@ -263,7 +263,7 @@ Before training your policy, it's recommended to visualize your recorded dataset
 
 ```bash
 python -m lerobot.scripts.visualize_dataset_html \
-    --root=./data/folder_path/handshake_dataset
+    --repo-id=your-username/handshake_dataset
 ```
 
 ---
@@ -277,7 +277,7 @@ python -m lerobot.replay \
     --robot.type=so101_follower \
     --robot.port=/dev/ttyACM1 \
     --robot.id=my_follower_arm \
-    --dataset.root=./data/folder_path/handshake_dataset \
+    --dataset.repo_id=your-username/handshake_dataset \
     --dataset.episode=2 \
     --dataset.fps=30
 ```
@@ -319,7 +319,7 @@ Train your robot using the specialized training script:
 
 ```bash
 python -m lerobot.scripts.train_handshake \
-    --dataset.root=./data/folder_path/handshake_dataset \
+    --dataset.repo_id=your-username/handshake_dataset \
     --policy.type=act \
     --policy.n_obs_steps=1 \
     --policy.chunk_size=100 \

@@ -22,7 +22,7 @@ python -m lerobot.replay \
     --robot.type=so100_follower \
     --robot.port=/dev/tty.usbmodem58760431541 \
     --robot.id=black \
-    --dataset.root=./data/folder_path/handshake_dataset \
+    --dataset.repo_id=aliberts/record-test \
     --dataset.episode=2
 ```
 """
@@ -52,18 +52,13 @@ from lerobot.common.utils.utils import (
 @dataclass
 class DatasetReplayConfig:
     # Dataset identifier. By convention it should match '{hf_username}/{dataset_name}' (e.g. `lerobot/test`).
-    repo_id: str | None = None
+    repo_id: str
     # Episode to replay.
     episode: int
     # Root directory where the dataset will be stored (e.g. 'dataset/path').
     root: str | Path | None = None
     # Limit the frames per second. By default, uses the policy fps.
     fps: int = 30
-    
-    def __post_init__(self):
-        # For local datasets, repo_id is optional but root is required
-        if self.repo_id is None and self.root is None:
-            raise ValueError("Either repo_id (for HuggingFace datasets) or root (for local datasets) must be specified")
 
 
 @dataclass
@@ -80,14 +75,7 @@ def replay(cfg: ReplayConfig):
     logging.info(pformat(asdict(cfg)))
 
     robot = make_robot_from_config(cfg.robot)
-    
-    # Handle local datasets (repo_id is None, root is specified)
-    if cfg.dataset.repo_id is None and cfg.dataset.root is not None:
-        repo_id = "local_dataset"  # Dummy repo_id for local dataset
-    else:
-        repo_id = cfg.dataset.repo_id
-    
-    dataset = LeRobotDataset(repo_id, root=cfg.dataset.root, episodes=[cfg.dataset.episode])
+    dataset = LeRobotDataset(cfg.dataset.repo_id, root=cfg.dataset.root, episodes=[cfg.dataset.episode])
     actions = dataset.hf_dataset.select_columns("action")
     robot.connect()
 

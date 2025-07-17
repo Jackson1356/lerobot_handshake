@@ -8,7 +8,7 @@ Example usage:
 
 ```bash
 python -m lerobot.scripts.train_handshake \
-    --dataset.root=./data/folder_path/handshake_dataset \
+    --dataset.repo_id=your-username/handshake_dataset \
     --policy.type=act \
     --policy.n_obs_steps=1 \
     --policy.chunk_size=100 \
