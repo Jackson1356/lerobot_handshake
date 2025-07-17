@@ -3,7 +3,7 @@
 Script to check handshake dataset and diagnose why training metrics show 0s.
 
 This script will:
-1. Load your handshake dataset
+1. Load your handshake dataset directly
 2. Check if handshake data is properly recorded
 3. Show the structure of the dataset
 4. Verify the data format matches what the training script expects
@@ -14,9 +14,7 @@ import torch
 from pathlib import Path
 from pprint import pformat
 
-from lerobot.common.datasets.factory import make_dataset
-from lerobot.configs import parser
-from lerobot.configs.train import TrainPipelineConfig
+from lerobot.common.datasets.lerobot_dataset import LeRobotDataset
 
 
 def check_dataset_structure(dataset):
@@ -172,15 +170,27 @@ def simulate_training_batch(dataset, batch_size=8):
         print("❌ observation.handshake feature not available for batch simulation")
 
 
-@parser.wrap()
-def main(cfg: TrainPipelineConfig):
+def main():
     """Main function to check the handshake dataset."""
+    import argparse
+    
+    parser = argparse.ArgumentParser(description="Check handshake dataset structure")
+    parser.add_argument("--repo_id", required=True, help="Dataset repo ID (e.g., username/handshake_dataset)")
+    parser.add_argument("--root", help="Local dataset root path (optional)")
+    
+    args = parser.parse_args()
+    
     print("🔍 HANDSHAKE DATASET DIAGNOSTIC TOOL")
     print("=" * 60)
     
-    # Load dataset
+    # Load dataset directly
     print("Loading dataset...")
-    dataset = make_dataset(cfg)
+    try:
+        dataset = LeRobotDataset(args.repo_id, root=args.root)
+        print(f"✅ Successfully loaded dataset: {args.repo_id}")
+    except Exception as e:
+        print(f"❌ Failed to load dataset: {e}")
+        return
     
     # Check structure
     handshake_features = check_dataset_structure(dataset)
