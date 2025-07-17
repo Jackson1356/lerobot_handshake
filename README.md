@@ -263,8 +263,7 @@ Before training your policy, it's recommended to visualize your recorded dataset
 
 ```bash
 python -m lerobot.scripts.visualize_dataset_html \
-    --repo-id=your-username/handshake_dataset \
-    --output-dir=./dataset_visualization
+    --repo-id=your-username/handshake_dataset
 ```
 
 ---
