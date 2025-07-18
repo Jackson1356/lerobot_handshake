@@ -325,7 +325,7 @@ python -m lerobot.scripts.train_handshake \
     --policy.chunk_size=100 \
     --policy.push_to_hub=false \
     --batch_size=8 \
-    --steps=100000
+    --steps=50000
 ```
 
 ### Training Features
