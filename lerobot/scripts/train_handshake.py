@@ -63,8 +63,8 @@ def preprocess_handshake_data(batch: dict) -> dict:
     """
     Preprocess handshake data to be compatible with ACT policy.
     
-    Instead of modifying the model's expected inputs, we integrate handshake data
-    into the existing observation.state in a way that doesn't break normalization.
+    The handshake data comes as observation.handshake with shape (4,) containing
+    [ready, confidence, pos_x, pos_y]. We integrate hand position into robot state.
     """
     if "observation.handshake" in batch:
         handshake_data = batch["observation.handshake"]  # Shape: (B, 4)
@@ -73,24 +73,17 @@ def preprocess_handshake_data(batch: dict) -> dict:
         hand_position_x = handshake_data[:, 2:3]       # (B, 1) - CRITICAL for learning
         hand_position_y = handshake_data[:, 3:4]       # (B, 1) - CRITICAL for learning
         
-        # Scale hand positions to be in a similar range as robot joints
-        # This prevents normalization issues while preserving hand position information
-        # Hand positions are typically 0-640 for X and 0-480 for Y
-        # Scale them to be in a similar range as robot joints (typically -1 to 1)
-        scaled_hand_x = (hand_position_x / 320.0) - 1.0  # Scale to [-1, 1] range
-        scaled_hand_y = (hand_position_y / 240.0) - 1.0  # Scale to [-1, 1] range
-        
-        # Create enhanced robot state that includes scaled hand position information
+        # Create enhanced robot state that includes hand position information
         if "observation.state" in batch:
             # Original robot state (typically 6D joint positions)
             robot_state = batch["observation.state"]  # Shape: (B, 6)
             
-            # Create enhanced state: [robot_joints, scaled_hand_x, scaled_hand_y]
-            # The scaling ensures the enhanced state can be normalized properly
+            # Create enhanced state: [robot_joints, hand_x, hand_y]
+            # This preserves hand position information while being compatible with ACT
             enhanced_state = torch.cat([
                 robot_state,           # Original robot joints (6D)
-                scaled_hand_x,         # Scaled hand X position (1D)
-                scaled_hand_y,         # Scaled hand Y position (1D)
+                hand_position_x,       # Hand X position (1D) - CRITICAL
+                hand_position_y,       # Hand Y position (1D) - CRITICAL
             ], dim=1)  # Shape: (B, 8)
             
             # Replace the original state with enhanced state
@@ -99,11 +92,12 @@ def preprocess_handshake_data(batch: dict) -> dict:
             # Remove the original handshake data to avoid conflicts
             del batch["observation.handshake"]
         else:
-            # If no robot state exists, create a minimal state with only scaled hand position data
-            logging.warning("No observation.state found, creating minimal state from scaled hand position data")
+            # If no robot state exists, create a minimal state with only hand position data
+            # This is less ideal but handles edge cases
+            logging.warning("No observation.state found, creating minimal state from hand position data")
             minimal_state = torch.cat([
-                scaled_hand_x,
-                scaled_hand_y,
+                hand_position_x,
+                hand_position_y,
             ], dim=1)  # Shape: (B, 2)
             
             batch["observation.state"] = minimal_state
@@ -114,17 +108,40 @@ def preprocess_handshake_data(batch: dict) -> dict:
 
 def create_handshake_act_config(cfg: TrainPipelineConfig) -> TrainPipelineConfig:
     """
-    Create a handshake-specific ACT configuration that works with existing architecture.
+    Create a handshake-specific ACT configuration that properly handles 8D enhanced state.
     
-    We keep the original ACT configuration and handle handshake data separately
-    to avoid conflicts with the model's expected input features.
+    The enhanced state includes: [robot_joints(6), hand_x(1), hand_y(1)]
+    This requires updating the ACT model's expected input dimensions.
     """
     if cfg.policy.type == "act":
-        # Use original ACT configuration - don't modify input features
-        # The handshake data will be handled in preprocessing without changing model expectations
+        # Set the input features BEFORE the model is created
+        # This ensures the ACT model expects 8D state from initialization
+        cfg.policy.input_features = {
+            "observation.state": PolicyFeature(
+                type=FeatureType.STATE,
+                shape=(8,),  # Enhanced state: [robot_joints(6), hand_x(1), hand_y(1)]
+            ),
+        }
         
-        logging.info("Using original ACT configuration for handshake training")
-        logging.info("Handshake data will be integrated during preprocessing")
+        # Add image features if available in dataset
+        if hasattr(cfg.policy, 'image_features') and cfg.policy.image_features:
+            # Add camera features - assuming single camera for handshake
+            cfg.policy.input_features["observation.images.camera"] = PolicyFeature(
+                type=FeatureType.VISUAL,
+                shape=(3, 480, 640),  # Standard camera resolution
+            )
+        
+        # Define output features
+        cfg.policy.output_features = {
+            "action": PolicyFeature(
+                type=FeatureType.ACTION,
+                shape=(6,),  # 6-DOF robot actions
+            ),
+        }
+        
+        logging.info("Created handshake-specific ACT configuration with 8D enhanced state")
+        logging.info(f"Input features: {list(cfg.policy.input_features.keys())}")
+        logging.info(f"Output features: {list(cfg.policy.output_features.keys())}")
     
     return cfg
 
@@ -137,16 +154,12 @@ def compute_handshake_metrics(batch: dict) -> dict:
     if "observation.state" in batch:
         state = batch["observation.state"]
         
-        # If state has 8 dimensions, it includes scaled hand position data
+        # If state has 8 dimensions, it includes hand position data
         if state.shape[1] >= 8:
-            # Extract scaled handshake components from enhanced state
-            # Format: [robot_joints(6), scaled_hand_x(1), scaled_hand_y(1)]
-            scaled_hand_x = state[:, 6]  # Scaled hand X position (7th element)
-            scaled_hand_y = state[:, 7]  # Scaled hand Y position (8th element)
-            
-            # Convert back to original pixel coordinates for metrics
-            hand_position_x = (scaled_hand_x + 1.0) * 320.0  # Convert back to [0, 640]
-            hand_position_y = (scaled_hand_y + 1.0) * 240.0  # Convert back to [0, 480]
+            # Extract handshake components from enhanced state
+            # Format: [robot_joints(6), hand_x(1), hand_y(1)]
+            hand_position_x = state[:, 6]  # Hand X position (7th element)
+            hand_position_y = state[:, 7]  # Hand Y position (8th element)
             
             # Filter valid hand positions (detection succeeded)
             valid_positions = (hand_position_x >= 0) & (hand_position_y >= 0)
