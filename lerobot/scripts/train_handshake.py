@@ -17,7 +17,6 @@ python -m lerobot.scripts.train_handshake \
     --steps=100000
 ```
 """
-
 import logging
 import time
 from contextlib import nullcontext
@@ -56,20 +55,111 @@ from lerobot.common.utils.utils import (
 from lerobot.common.utils.wandb_utils import WandBLogger
 from lerobot.configs import parser
 from lerobot.configs.train import TrainPipelineConfig
+from lerobot.configs.types import FeatureType, PolicyFeature
 from lerobot.scripts.eval import eval_policy
+
+
+def create_handshake_act_config(cfg: TrainPipelineConfig) -> TrainPipelineConfig:
+    """
+    Create a handshake-specific ACT configuration that properly handles enhanced state dimensions.
+    
+    The enhanced state includes: [robot_joints(6), hand_x(1), hand_y(1)]
+    This ensures the policy can learn from hand position information.
+    """
+    if cfg.policy.type == "act":
+        # Define input features for handshake training
+        cfg.policy.input_features = {
+            "observation.state": PolicyFeature(
+                type=FeatureType.STATE,
+                shape=(8,),  # Enhanced state: [robot_joints(6), hand_x(1), hand_y(1)]
+            ),
+        }
+        
+        # Add image features if available in dataset
+        if hasattr(cfg.policy, 'image_features') and cfg.policy.image_features:
+            # Add camera features - assuming single camera for handshake
+            cfg.policy.input_features["observation.images.camera"] = PolicyFeature(
+                type=FeatureType.VISUAL,
+                shape=(3, 480, 640),  # Standard camera resolution
+            )
+        
+        # Define output features
+        cfg.policy.output_features = {
+            "action": PolicyFeature(
+                type=FeatureType.ACTION,
+                shape=(6,),  # 6-DOF robot actions
+            ),
+        }
+        
+        logging.info("Created handshake-specific ACT configuration with enhanced state (8D)")
+        logging.info(f"Input features: {list(cfg.policy.input_features.keys())}")
+        logging.info(f"Output features: {list(cfg.policy.output_features.keys())}")
+    
+    return cfg
+
+
+def preprocess_handshake_data(batch: dict) -> dict:
+    """
+    Preprocess handshake data to be compatible with ACT policy.
+    
+    The handshake data comes as observation.handshake with shape (4,) containing
+    [ready, confidence, pos_x, pos_y]. We only preserve the hand position (x, y)
+    and integrate it into the robot state for learning.
+    """
+    if "observation.handshake" in batch:
+        handshake_data = batch["observation.handshake"]  # Shape: (B, 4)
+        
+        # Extract only hand position components (ignore ready/confidence)
+        hand_position_x = handshake_data[:, 2:3]       # (B, 1) - CRITICAL for learning
+        hand_position_y = handshake_data[:, 3:4]       # (B, 1) - CRITICAL for learning
+        
+        # Create enhanced robot state that includes only hand position information
+        if "observation.state" in batch:
+            # Original robot state (typically 6D joint positions)
+            robot_state = batch["observation.state"]  # Shape: (B, 6)
+            
+            # Create enhanced state: [robot_joints, hand_x, hand_y]
+            # This preserves only hand position information while being compatible with ACT
+            enhanced_state = torch.cat([
+                robot_state,           # Original robot joints (6D)
+                hand_position_x,       # Hand X position (1D) - CRITICAL
+                hand_position_y,       # Hand Y position (1D) - CRITICAL
+            ], dim=1)  # Shape: (B, 8)
+            
+            # Replace the original state with enhanced state
+            batch["observation.state"] = enhanced_state
+            
+            # Remove the original handshake data to avoid conflicts
+            del batch["observation.handshake"]
+        else:
+            # If no robot state exists, create a minimal state with only hand position data
+            # This is less ideal but handles edge cases
+            logging.warning("No observation.state found, creating minimal state from hand position data")
+            minimal_state = torch.cat([
+                hand_position_x,
+                hand_position_y,
+            ], dim=1)  # Shape: (B, 2)
+            
+            batch["observation.state"] = minimal_state
+            del batch["observation.handshake"]
+    
+    return batch
 
 
 def compute_handshake_metrics(batch: dict) -> dict:
     """Compute handshake-specific metrics from a training batch."""
     metrics = {}
     
-    if "observation.handshake" in batch:
-        handshake_data = batch["observation.handshake"]
-        if isinstance(handshake_data, torch.Tensor):
-            # handshake_data shape: [batch_size, 4] where 4 = [ready, confidence, pos_x, pos_y]
-            # Only hand positions matter since recording only happens when handshake is ready
-            hand_position_x = handshake_data[:, 2]  # Target X position
-            hand_position_y = handshake_data[:, 3]  # Target Y position
+    # Check if we have handshake data in the enhanced state
+    if "observation.state" in batch:
+        state = batch["observation.state"]
+        
+        # If state has 8 dimensions, it includes hand position data
+        if state.shape[1] >= 8:
+            # Extract handshake components from enhanced state
+            # Format: [robot_joints(6), hand_x(1), hand_y(1)]
+            hand_position_x = state[:, 6]  # Hand X position (7th element)
+            hand_position_y = state[:, 7]  # Hand Y position (8th element)
             
             # Filter valid hand positions (detection succeeded)
             valid_positions = (hand_position_x >= 0) & (hand_position_y >= 0)
@@ -97,6 +187,15 @@ def compute_handshake_metrics(batch: dict) -> dict:
                 metrics["hand_position_variance_y"] = 0.0
                 metrics["hand_x_range"] = 0.0
                 metrics["hand_y_range"] = 0.0
+        else:
+            # No handshake data in state
+            metrics["valid_hand_position_rate"] = 0.0
+            metrics["avg_target_hand_x"] = 0.0
+            metrics["avg_target_hand_y"] = 0.0
+            metrics["hand_position_variance_x"] = 0.0
+            metrics["hand_position_variance_y"] = 0.0
+            metrics["hand_x_range"] = 0.0
+            metrics["hand_y_range"] = 0.0
     
     return metrics
 
@@ -115,6 +214,9 @@ def update_policy(
     start_time = time.perf_counter()
     device = get_device_from_parameters(policy)
     policy.train()
+    
+    # Preprocess handshake data to be compatible with ACT policy
+    batch = preprocess_handshake_data(batch)
     
     with torch.autocast(device_type=device.type) if use_amp else nullcontext():
         loss, output_dict = policy.forward(batch)
@@ -163,6 +265,10 @@ def update_policy(
 @parser.wrap()
 def train(cfg: TrainPipelineConfig):
     cfg.validate()
+    
+    # Create handshake-specific configuration
+    cfg = create_handshake_act_config(cfg)
+    
     logging.info(pformat(cfg.to_dict()))
 
     if cfg.wandb.enable and cfg.wandb.project:
