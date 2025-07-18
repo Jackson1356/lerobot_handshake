@@ -96,6 +96,15 @@ def compute_handshake_metrics(batch: dict) -> dict:
                 metrics["hand_position_variance_y"] = 0.0
                 metrics["hand_x_range"] = 0.0
                 metrics["hand_y_range"] = 0.0
+    else:
+        # Set default values when no handshake data
+        metrics["valid_hand_position_rate"] = 0.0
+        metrics["avg_target_hand_x"] = 0.0
+        metrics["avg_target_hand_y"] = 0.0
+        metrics["hand_position_variance_x"] = 0.0
+        metrics["hand_position_variance_y"] = 0.0
+        metrics["hand_x_range"] = 0.0
+        metrics["hand_y_range"] = 0.0
     
     return metrics
 
