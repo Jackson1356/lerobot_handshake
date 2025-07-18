@@ -59,56 +59,12 @@ from lerobot.configs.types import FeatureType, PolicyFeature
 from lerobot.scripts.eval import eval_policy
 
 
-def create_handshake_act_config(cfg: TrainPipelineConfig) -> TrainPipelineConfig:
-    """
-    Create a handshake-specific ACT configuration that properly handles hand position data.
-    
-    The handshake data is kept as a separate feature: observation.hand_position (2D)
-    This avoids normalization conflicts while preserving hand position learning.
-    """
-    if cfg.policy.type == "act":
-        # Define input features for handshake training
-        cfg.policy.input_features = {
-            "observation.state": PolicyFeature(
-                type=FeatureType.STATE,
-                shape=(6,),  # Original robot state (6D joint positions)
-            ),
-            "observation.hand_position": PolicyFeature(
-                type=FeatureType.STATE,
-                shape=(2,),  # Hand position data: [hand_x, hand_y]
-            ),
-        }
-        
-        # Add image features if available in dataset
-        if hasattr(cfg.policy, 'image_features') and cfg.policy.image_features:
-            # Add camera features - assuming single camera for handshake
-            cfg.policy.input_features["observation.images.camera"] = PolicyFeature(
-                type=FeatureType.VISUAL,
-                shape=(3, 480, 640),  # Standard camera resolution
-            )
-        
-        # Define output features
-        cfg.policy.output_features = {
-            "action": PolicyFeature(
-                type=FeatureType.ACTION,
-                shape=(6,),  # 6-DOF robot actions
-            ),
-        }
-        
-        logging.info("Created handshake-specific ACT configuration with separate hand position feature")
-        logging.info(f"Input features: {list(cfg.policy.input_features.keys())}")
-        logging.info(f"Output features: {list(cfg.policy.output_features.keys())}")
-    
-    return cfg
-
-
 def preprocess_handshake_data(batch: dict) -> dict:
     """
     Preprocess handshake data to be compatible with ACT policy.
     
-    The handshake data comes as observation.handshake with shape (4,) containing
-    [ready, confidence, pos_x, pos_y]. We only preserve the hand position (x, y)
-    and add it as a separate feature to avoid normalization conflicts.
+    Instead of modifying the model's expected inputs, we integrate handshake data
+    into the existing observation.state in a way that doesn't break normalization.
     """
     if "observation.handshake" in batch:
         handshake_data = batch["observation.handshake"]  # Shape: (B, 4)
@@ -117,66 +73,116 @@ def preprocess_handshake_data(batch: dict) -> dict:
         hand_position_x = handshake_data[:, 2:3]       # (B, 1) - CRITICAL for learning
         hand_position_y = handshake_data[:, 3:4]       # (B, 1) - CRITICAL for learning
         
-        # Create hand position feature (separate from robot state to avoid normalization conflicts)
-        hand_position = torch.cat([hand_position_x, hand_position_y], dim=1)  # Shape: (B, 2)
-        batch["observation.hand_position"] = hand_position
+        # Scale hand positions to be in a similar range as robot joints
+        # This prevents normalization issues while preserving hand position information
+        # Hand positions are typically 0-640 for X and 0-480 for Y
+        # Scale them to be in a similar range as robot joints (typically -1 to 1)
+        scaled_hand_x = (hand_position_x / 320.0) - 1.0  # Scale to [-1, 1] range
+        scaled_hand_y = (hand_position_y / 240.0) - 1.0  # Scale to [-1, 1] range
         
-        # Keep original robot state unchanged for proper normalization
-        # The ACT policy will handle both observation.state (6D) and observation.hand_position (2D)
-        
-        # Remove the original handshake data to avoid conflicts
-        del batch["observation.handshake"]
+        # Create enhanced robot state that includes scaled hand position information
+        if "observation.state" in batch:
+            # Original robot state (typically 6D joint positions)
+            robot_state = batch["observation.state"]  # Shape: (B, 6)
+            
+            # Create enhanced state: [robot_joints, scaled_hand_x, scaled_hand_y]
+            # The scaling ensures the enhanced state can be normalized properly
+            enhanced_state = torch.cat([
+                robot_state,           # Original robot joints (6D)
+                scaled_hand_x,         # Scaled hand X position (1D)
+                scaled_hand_y,         # Scaled hand Y position (1D)
+            ], dim=1)  # Shape: (B, 8)
+            
+            # Replace the original state with enhanced state
+            batch["observation.state"] = enhanced_state
+            
+            # Remove the original handshake data to avoid conflicts
+            del batch["observation.handshake"]
+        else:
+            # If no robot state exists, create a minimal state with only scaled hand position data
+            logging.warning("No observation.state found, creating minimal state from scaled hand position data")
+            minimal_state = torch.cat([
+                scaled_hand_x,
+                scaled_hand_y,
+            ], dim=1)  # Shape: (B, 2)
+            
+            batch["observation.state"] = minimal_state
+            del batch["observation.handshake"]
     
     return batch
+
+
+def create_handshake_act_config(cfg: TrainPipelineConfig) -> TrainPipelineConfig:
+    """
+    Create a handshake-specific ACT configuration that works with existing architecture.
+    
+    We keep the original ACT configuration and handle handshake data separately
+    to avoid conflicts with the model's expected input features.
+    """
+    if cfg.policy.type == "act":
+        # Use original ACT configuration - don't modify input features
+        # The handshake data will be handled in preprocessing without changing model expectations
+        
+        logging.info("Using original ACT configuration for handshake training")
+        logging.info("Handshake data will be integrated during preprocessing")
+    
+    return cfg
 
 
 def compute_handshake_metrics(batch: dict) -> dict:
     """Compute handshake-specific metrics from a training batch."""
     metrics = {}
     
-    # Check if we have handshake data in the hand_position feature
-    if "observation.hand_position" in batch:
-        hand_position = batch["observation.hand_position"]  # Shape: (B, 2)
+    # Check if we have handshake data in the enhanced state
+    if "observation.state" in batch:
+        state = batch["observation.state"]
         
-        # Extract hand position components
-        hand_position_x = hand_position[:, 0]  # Hand X position
-        hand_position_y = hand_position[:, 1]  # Hand Y position
-        
-        # Filter valid hand positions (detection succeeded)
-        valid_positions = (hand_position_x >= 0) & (hand_position_y >= 0)
-        metrics["valid_hand_position_rate"] = valid_positions.float().mean().item() * 100
-        
-        if valid_positions.any():
-            # Only compute position stats for valid detections
-            valid_x = hand_position_x[valid_positions]
-            valid_y = hand_position_y[valid_positions]
+        # If state has 8 dimensions, it includes scaled hand position data
+        if state.shape[1] >= 8:
+            # Extract scaled handshake components from enhanced state
+            # Format: [robot_joints(6), scaled_hand_x(1), scaled_hand_y(1)]
+            scaled_hand_x = state[:, 6]  # Scaled hand X position (7th element)
+            scaled_hand_y = state[:, 7]  # Scaled hand Y position (8th element)
             
-            # Hand position distribution - tells us where people extend hands
-            metrics["avg_target_hand_x"] = valid_x.mean().item()
-            metrics["avg_target_hand_y"] = valid_y.mean().item()
-            metrics["hand_position_variance_x"] = valid_x.var().item()
-            metrics["hand_position_variance_y"] = valid_y.var().item()
+            # Convert back to original pixel coordinates for metrics
+            hand_position_x = (scaled_hand_x + 1.0) * 320.0  # Convert back to [0, 640]
+            hand_position_y = (scaled_hand_y + 1.0) * 240.0  # Convert back to [0, 480]
             
-            # Hand position diversity (important for robust training)
-            metrics["hand_x_range"] = (valid_x.max() - valid_x.min()).item()
-            metrics["hand_y_range"] = (valid_y.max() - valid_y.min()).item()
+            # Filter valid hand positions (detection succeeded)
+            valid_positions = (hand_position_x >= 0) & (hand_position_y >= 0)
+            metrics["valid_hand_position_rate"] = valid_positions.float().mean().item() * 100
+            
+            if valid_positions.any():
+                # Only compute position stats for valid detections
+                valid_x = hand_position_x[valid_positions]
+                valid_y = hand_position_y[valid_positions]
+                
+                # Hand position distribution - tells us where people extend hands
+                metrics["avg_target_hand_x"] = valid_x.mean().item()
+                metrics["avg_target_hand_y"] = valid_y.mean().item()
+                metrics["hand_position_variance_x"] = valid_x.var().item()
+                metrics["hand_position_variance_y"] = valid_y.var().item()
+                
+                # Hand position diversity (important for robust training)
+                metrics["hand_x_range"] = (valid_x.max() - valid_x.min()).item()
+                metrics["hand_y_range"] = (valid_y.max() - valid_y.min()).item()
+            else:
+                # No valid positions in this batch
+                metrics["avg_target_hand_x"] = 0.0
+                metrics["avg_target_hand_y"] = 0.0
+                metrics["hand_position_variance_x"] = 0.0
+                metrics["hand_position_variance_y"] = 0.0
+                metrics["hand_x_range"] = 0.0
+                metrics["hand_y_range"] = 0.0
         else:
-            # No valid positions in this batch
+            # No handshake data in state
+            metrics["valid_hand_position_rate"] = 0.0
             metrics["avg_target_hand_x"] = 0.0
             metrics["avg_target_hand_y"] = 0.0
             metrics["hand_position_variance_x"] = 0.0
             metrics["hand_position_variance_y"] = 0.0
             metrics["hand_x_range"] = 0.0
             metrics["hand_y_range"] = 0.0
-    else:
-        # No handshake data
-        metrics["valid_hand_position_rate"] = 0.0
-        metrics["avg_target_hand_x"] = 0.0
-        metrics["avg_target_hand_y"] = 0.0
-        metrics["hand_position_variance_x"] = 0.0
-        metrics["hand_position_variance_y"] = 0.0
-        metrics["hand_x_range"] = 0.0
-        metrics["hand_y_range"] = 0.0
     
     return metrics
 
