@@ -14,7 +14,7 @@ python -m lerobot.scripts.train_handshake \
     --policy.chunk_size=100 \
     --policy.push_to_hub=false \
     --batch_size=8 \
-    --steps=50000
+    --steps=100000
 ```
 """
 
@@ -62,15 +62,8 @@ def compute_handshake_metrics(batch: dict) -> dict:
     """Compute handshake-specific metrics from a training batch."""
     metrics = {}
     
-    # Debug: Print batch keys to understand structure
-    print(f"Batch keys: {list(batch.keys())}")
-    
     if "observation.handshake" in batch:
         handshake_data = batch["observation.handshake"]
-        print(f"Handshake data shape: {handshake_data.shape if hasattr(handshake_data, 'shape') else 'no shape'}")
-        print(f"Handshake data type: {type(handshake_data)}")
-        print(f"Handshake data sample: {handshake_data[:2] if hasattr(handshake_data, '__getitem__') else handshake_data}")
-        
         if isinstance(handshake_data, torch.Tensor):
             # handshake_data shape: [batch_size, 4] where 4 = [ready, confidence, pos_x, pos_y]
             # Only hand positions matter since recording only happens when handshake is ready
@@ -103,16 +96,6 @@ def compute_handshake_metrics(batch: dict) -> dict:
                 metrics["hand_position_variance_y"] = 0.0
                 metrics["hand_x_range"] = 0.0
                 metrics["hand_y_range"] = 0.0
-    else:
-        print("No 'observation.handshake' found in batch")
-        # Set default values when no handshake data
-        metrics["valid_hand_position_rate"] = 0.0
-        metrics["avg_target_hand_x"] = 0.0
-        metrics["avg_target_hand_y"] = 0.0
-        metrics["hand_position_variance_x"] = 0.0
-        metrics["hand_position_variance_y"] = 0.0
-        metrics["hand_x_range"] = 0.0
-        metrics["hand_y_range"] = 0.0
     
     return metrics
 
@@ -211,11 +194,6 @@ def train(cfg: TrainPipelineConfig):
         cfg=cfg.policy,
         ds_meta=dataset.meta,
     )
-    
-    # Debug: Print policy features to understand what inputs the policy expects
-    print(f"Policy input features: {list(policy.config.input_features.keys())}")
-    print(f"Policy output features: {list(policy.config.output_features.keys())}")
-    print(f"Dataset features: {list(dataset.features.keys())}")
 
     logging.info("Creating optimizer and scheduler")
     optimizer, lr_scheduler = make_optimizer_and_scheduler(cfg, policy)
@@ -288,13 +266,6 @@ def train(cfg: TrainPipelineConfig):
         start_time = time.perf_counter()
         batch = next(dl_iter)
         train_tracker.dataloading_s = time.perf_counter() - start_time
-        
-        # Debug: Print batch structure on first iteration
-        if step == 0:
-            print(f"First batch keys: {list(batch.keys())}")
-            if "observation.handshake" in batch:
-                print(f"First batch handshake shape: {batch['observation.handshake'].shape}")
-                print(f"First batch handshake sample: {batch['observation.handshake'][:2]}")
 
         for key in batch:
             if isinstance(batch[key], torch.Tensor):
