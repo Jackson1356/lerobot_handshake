@@ -152,8 +152,8 @@ def update_policy(
         
         # Update train_tracker with handshake metrics so they appear in logs
         for metric_name, metric_value in handshake_metrics.items():
-            if metric_name in train_metrics:
-                train_metrics[metric_name].update(metric_value)
+            if hasattr(train_metrics, 'metrics') and metric_name in train_metrics.metrics:
+                train_metrics.metrics[metric_name].update(metric_value)
     
     grad_scaler.scale(loss).backward()
 
