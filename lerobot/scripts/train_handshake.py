@@ -62,22 +62,38 @@ def compute_handshake_metrics(batch: dict) -> dict:
     """Compute handshake-specific metrics from a training batch."""
     metrics = {}
     
+    # Debug: Print batch keys to understand what's available
+    if hasattr(compute_handshake_metrics, '_debug_printed') is False:
+        print(f"DEBUG: Batch keys: {list(batch.keys())}")
+        compute_handshake_metrics._debug_printed = True
+    
     if "observation.handshake" in batch:
         handshake_data = batch["observation.handshake"]
         if isinstance(handshake_data, torch.Tensor):
+            print(f"DEBUG: Handshake data shape: {handshake_data.shape}")
+            print(f"DEBUG: Handshake data sample: {handshake_data[0] if handshake_data.shape[0] > 0 else 'empty'}")
+            
             # handshake_data shape: [batch_size, 4] where 4 = [ready, confidence, pos_x, pos_y]
             # Only hand positions matter since recording only happens when handshake is ready
             hand_position_x = handshake_data[:, 2]  # Target X position
             hand_position_y = handshake_data[:, 3]  # Target Y position
             
+            print(f"DEBUG: Hand positions X: {hand_position_x}")
+            print(f"DEBUG: Hand positions Y: {hand_position_y}")
+            
             # Filter valid hand positions (detection succeeded)
             valid_positions = (hand_position_x >= 0) & (hand_position_y >= 0)
+            print(f"DEBUG: Valid positions: {valid_positions.sum().item()}/{len(valid_positions)}")
+            
             metrics["valid_hand_position_rate"] = valid_positions.float().mean().item() * 100
             
             if valid_positions.any():
                 # Only compute position stats for valid detections
                 valid_x = hand_position_x[valid_positions]
                 valid_y = hand_position_y[valid_positions]
+                
+                print(f"DEBUG: Valid X positions: {valid_x}")
+                print(f"DEBUG: Valid Y positions: {valid_y}")
                 
                 # Hand position distribution - tells us where people extend hands
                 metrics["avg_target_hand_x"] = valid_x.mean().item()
@@ -89,6 +105,7 @@ def compute_handshake_metrics(batch: dict) -> dict:
                 metrics["hand_x_range"] = (valid_x.max() - valid_x.min()).item()
                 metrics["hand_y_range"] = (valid_y.max() - valid_y.min()).item()
             else:
+                print("DEBUG: No valid positions in this batch!")
                 # No valid positions in this batch
                 metrics["avg_target_hand_x"] = 0.0
                 metrics["avg_target_hand_y"] = 0.0
@@ -97,6 +114,7 @@ def compute_handshake_metrics(batch: dict) -> dict:
                 metrics["hand_x_range"] = 0.0
                 metrics["hand_y_range"] = 0.0
     else:
+        print(f"DEBUG: No 'observation.handshake' found in batch. Available keys: {list(batch.keys())}")
         # Set default values when handshake data is not available
         metrics["valid_hand_position_rate"] = 0.0
         metrics["avg_target_hand_x"] = 0.0
