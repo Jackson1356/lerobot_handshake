@@ -124,14 +124,10 @@ def update_policy(
     device = get_device_from_parameters(policy)
     policy.train()
     
-    # Combine handshake features with robot state for ACT model
-    if "observation.handshake" in batch and "observation.state" in batch:
-        # Concatenate handshake features to robot state
-        robot_state = batch["observation.state"]
-        handshake_features = batch["observation.handshake"]
-        # Combine: [robot_state, handshake_features]
-        combined_state = torch.cat([robot_state, handshake_features], dim=1)
-        batch["observation.state"] = combined_state
+    # Handle handshake features by creating environment state from handshake data
+    if "observation.handshake" in batch:
+        # Create environment state from handshake features so ACT model can use them
+        batch["observation.environment_state"] = batch["observation.handshake"]
     
     with torch.autocast(device_type=device.type) if use_amp else nullcontext():
         loss, output_dict = policy.forward(batch)
