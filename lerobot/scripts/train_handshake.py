@@ -96,6 +96,15 @@ def compute_handshake_metrics(batch: dict) -> dict:
                 metrics["hand_position_variance_y"] = 0.0
                 metrics["hand_x_range"] = 0.0
                 metrics["hand_y_range"] = 0.0
+    else:
+        # Set default values when handshake data is not available
+        metrics["valid_hand_position_rate"] = 0.0
+        metrics["avg_target_hand_x"] = 0.0
+        metrics["avg_target_hand_y"] = 0.0
+        metrics["hand_position_variance_x"] = 0.0
+        metrics["hand_position_variance_y"] = 0.0
+        metrics["hand_x_range"] = 0.0
+        metrics["hand_y_range"] = 0.0
     
     return metrics
 
@@ -114,6 +123,15 @@ def update_policy(
     start_time = time.perf_counter()
     device = get_device_from_parameters(policy)
     policy.train()
+    
+    # Combine handshake features with robot state for ACT model
+    if "observation.handshake" in batch and "observation.state" in batch:
+        # Concatenate handshake features to robot state
+        robot_state = batch["observation.state"]
+        handshake_features = batch["observation.handshake"]
+        # Combine: [robot_state, handshake_features]
+        combined_state = torch.cat([robot_state, handshake_features], dim=1)
+        batch["observation.state"] = combined_state
     
     with torch.autocast(device_type=device.type) if use_amp else nullcontext():
         loss, output_dict = policy.forward(batch)
