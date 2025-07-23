@@ -161,7 +161,7 @@ python -m lerobot.calibrate \
 2. Move each joint through its full range of motion when prompted
 3. This ensures both arms have matching position values for training
 
-**The calibration json files are saved to /home/.cache/huggingface/lerobot/calibration**
+**Please keep in mind that robot.id and teleop.id should be the same for following commands.**
 
 ### 5. Manual Teleoperation
 
