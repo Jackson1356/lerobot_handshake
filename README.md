@@ -370,7 +370,7 @@ Deploy your trained handshake policy:
 
 ```bash
 python -m lerobot.scripts.eval_handshake \
-    --policy.pretrained_path=outputs/train/handshake_policy_v1/checkpoints/last/pretrained_model \
+    --policy.path=outputs/train/handshake_policy_v1/checkpoints/last/pretrained_model \
     --robot.type=so101_follower \
     --robot.port=/dev/ttyACM1 \
     --robot.id=my_follower_arm \
