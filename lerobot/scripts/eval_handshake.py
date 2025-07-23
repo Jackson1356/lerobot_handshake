@@ -10,8 +10,9 @@ Example usage:
 
 ```bash
 python -m lerobot.scripts.eval_handshake \
-    --policy.path=outputs/train/handshake_policy_v1/checkpoints/last/pretrained_model \
-    --robot.type=so101_follower \
+    --policy.pretrained_path=outputs/train/handshake_policy_v1/checkpoints/last/pretrained_model \
+    --robot.type=so101 \
+    --robot.is_follower=true \
     --robot.port=/dev/ttyACM1 \
     --robot.id=my_follower_arm \
     --robot.cameras='{"front": {"type": "opencv", "index_or_path": "/dev/video1", "width": 640, "height": 480, "fps": 30}}' \
