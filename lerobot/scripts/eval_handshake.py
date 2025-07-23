@@ -65,8 +65,8 @@ class HandshakeEvalConfig:
 @dataclass
 class HandshakeEvalPipelineConfig:
     robot: RobotConfig
-    policy: PreTrainedConfig | None = None
     eval: HandshakeEvalConfig
+    policy: PreTrainedConfig | None = None
     output_dir: Path = Path("outputs/eval_handshake")
     display_data: bool = False
     device: str = "cuda"
