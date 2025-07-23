@@ -24,7 +24,7 @@ python -m lerobot.scripts.eval_handshake \
 
 import logging
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from pprint import pformat
 from typing import Any
@@ -52,7 +52,7 @@ from lerobot.configs.policies import PreTrainedConfig
 
 
 @dataclass
-class HandshakeEvalConfig(draccus.ChoiceRegistry):
+class HandshakeEvalConfig:
     """Configuration for handshake policy evaluation."""
     num_episodes: int = 10
     episode_time_s: float = 30.0
@@ -62,14 +62,10 @@ class HandshakeEvalConfig(draccus.ChoiceRegistry):
     fps: int = 20
     handshake_detection_fps: int = 10
 
-# Register default type for draccus
-HandshakeEvalConfig.register_subclass("default")(HandshakeEvalConfig)
-
-
 @dataclass
 class HandshakeEvalPipelineConfig:
     robot: RobotConfig
-    eval: HandshakeEvalConfig = HandshakeEvalConfig()
+    eval: HandshakeEvalConfig = field(default_factory=HandshakeEvalConfig)
     policy: PreTrainedConfig | None = None
     output_dir: Path = Path("outputs/eval_handshake")
     display_data: bool = False
