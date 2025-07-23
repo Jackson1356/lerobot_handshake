@@ -65,7 +65,7 @@ class HandshakeEvalConfig:
 @dataclass
 class HandshakeEvalPipelineConfig:
     robot: RobotConfig
-    eval: HandshakeEvalConfig
+    eval: HandshakeEvalConfig = HandshakeEvalConfig()
     policy: PreTrainedConfig | None = None
     output_dir: Path = Path("outputs/eval_handshake")
     display_data: bool = False
