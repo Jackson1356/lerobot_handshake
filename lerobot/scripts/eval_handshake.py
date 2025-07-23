@@ -136,6 +136,11 @@ def wait_for_handshake_detection(
                     rr.log("status", rr.TextLog(status_text, level=rr.TextLogLevel.INFO))
                     last_status_update = current_time
                 
+                # Get pose overlay for camera feed using detection result
+                annotated_frame = None
+                if camera_name in observation and detection_result and 'annotated_frame' in detection_result:
+                    annotated_frame = detection_result['annotated_frame']
+                
                 # Robot joint positions (6 values only) - grouped in single chart
                 robot_joints = {}
                 for obs, val in observation.items():
