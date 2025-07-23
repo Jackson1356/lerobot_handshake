@@ -41,6 +41,7 @@ from lerobot.common.handshake_detection import ImprovedHandshakeDetector
 from lerobot.common.policies.factory import make_policy
 from lerobot.common.policies.pretrained import PreTrainedPolicy
 from lerobot.common.robots import Robot, RobotConfig, make_robot_from_config  # noqa: F401
+from lerobot.common.robots import so101_follower  # Ensure so101_follower is registered
 from lerobot.common.utils.control_utils import predict_action
 from lerobot.common.utils.robot_utils import busy_wait
 from lerobot.common.utils.utils import get_safe_torch_device, init_logging, log_say
