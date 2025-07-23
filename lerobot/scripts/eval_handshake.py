@@ -32,6 +32,7 @@ from typing import Any
 import numpy as np
 import rerun as rr
 import torch
+import draccus
 
 from lerobot.common.cameras import CameraConfig  # noqa: F401
 from lerobot.common.cameras.opencv.configuration_opencv import OpenCVCameraConfig  # noqa: F401
@@ -51,7 +52,7 @@ from lerobot.configs.policies import PreTrainedConfig
 
 
 @dataclass
-class HandshakeEvalConfig:
+class HandshakeEvalConfig(draccus.ChoiceRegistry):
     """Configuration for handshake policy evaluation."""
     num_episodes: int = 10
     episode_time_s: float = 30.0
@@ -60,6 +61,9 @@ class HandshakeEvalConfig:
     handshake_detection_delay: float = 1.0
     fps: int = 20
     handshake_detection_fps: int = 10
+
+# Register default type for draccus
+HandshakeEvalConfig.register_subclass("default")(HandshakeEvalConfig)
 
 
 @dataclass
