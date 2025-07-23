@@ -65,7 +65,7 @@ class HandshakeEvalConfig:
 @dataclass
 class HandshakeEvalPipelineConfig:
     robot: RobotConfig
-    policy: PreTrainedConfig
+    policy: PreTrainedConfig | None = None
     eval: HandshakeEvalConfig
     output_dir: Path = Path("outputs/eval_handshake")
     display_data: bool = False
@@ -75,7 +75,7 @@ class HandshakeEvalPipelineConfig:
     def __post_init__(self):
         # Parse policy from CLI if provided
         policy_path = parser.get_path_arg("policy")
-        if policy_path:
+        if self.policy is None and policy_path:
             cli_overrides = parser.get_cli_overrides("policy")
             self.policy = PreTrainedConfig.from_pretrained(policy_path, cli_overrides=cli_overrides)
             self.policy.pretrained_path = policy_path
