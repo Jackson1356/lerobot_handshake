@@ -24,7 +24,7 @@ python -m lerobot.scripts.eval_handshake \
 
 import logging
 import time
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from pprint import pformat
 from typing import Any
@@ -32,7 +32,6 @@ from typing import Any
 import numpy as np
 import rerun as rr
 import torch
-import draccus
 
 from lerobot.common.cameras import CameraConfig  # noqa: F401
 from lerobot.common.cameras.opencv.configuration_opencv import OpenCVCameraConfig  # noqa: F401
@@ -42,7 +41,6 @@ from lerobot.common.handshake_detection import ImprovedHandshakeDetector
 from lerobot.common.policies.factory import make_policy
 from lerobot.common.policies.pretrained import PreTrainedPolicy
 from lerobot.common.robots import Robot, RobotConfig, make_robot_from_config  # noqa: F401
-from lerobot.common.robots import so101_follower  # Ensure so101_follower is registered
 from lerobot.common.utils.control_utils import predict_action
 from lerobot.common.utils.robot_utils import busy_wait
 from lerobot.common.utils.utils import get_safe_torch_device, init_logging, log_say
@@ -62,11 +60,12 @@ class HandshakeEvalConfig:
     fps: int = 20
     handshake_detection_fps: int = 10
 
+
 @dataclass
 class HandshakeEvalPipelineConfig:
     robot: RobotConfig
-    eval: HandshakeEvalConfig = field(default_factory=HandshakeEvalConfig)
-    policy: PreTrainedConfig | None = None
+    policy: PreTrainedConfig
+    eval: HandshakeEvalConfig
     output_dir: Path = Path("outputs/eval_handshake")
     display_data: bool = False
     device: str = "cuda"
@@ -75,7 +74,7 @@ class HandshakeEvalPipelineConfig:
     def __post_init__(self):
         # Parse policy from CLI if provided
         policy_path = parser.get_path_arg("policy")
-        if self.policy is None and policy_path:
+        if policy_path:
             cli_overrides = parser.get_cli_overrides("policy")
             self.policy = PreTrainedConfig.from_pretrained(policy_path, cli_overrides=cli_overrides)
             self.policy.pretrained_path = policy_path
