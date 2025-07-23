@@ -11,8 +11,7 @@ Example usage:
 ```bash
 python -m lerobot.scripts.eval_handshake \
     --policy.pretrained_path=outputs/train/handshake_policy_v1/checkpoints/last/pretrained_model \
-    --robot.type=so101 \
-    --robot.is_follower=true \
+    --robot.type=so101_follower \
     --robot.port=/dev/ttyACM1 \
     --robot.id=my_follower_arm \
     --robot.cameras='{"front": {"type": "opencv", "index_or_path": "/dev/video1", "width": 640, "height": 480, "fps": 30}}' \
@@ -47,7 +46,8 @@ from lerobot.common.utils.robot_utils import busy_wait
 from lerobot.common.utils.utils import get_safe_torch_device, init_logging, log_say
 from lerobot.common.utils.visualization_utils import _init_rerun
 from lerobot.configs import parser
-from lerobot.configs.policies import PreTrainedConfig
+from lerobot.configs.policies import PreTrainedConfig 
+import lerobot.common.robots.so101_follower # noqa: F401
 
 
 @dataclass
