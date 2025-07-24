@@ -85,9 +85,9 @@ def create_handshake_env_config(robot: Robot) -> EnvConfig:
         features["observation.state"] = PolicyFeature(type=FeatureType.STATE, shape=(len(state_features),))
         features_map["observation.state"] = "observation.state"
     
-    # Add handshake detection features to state
-    features["observation.handshake"] = PolicyFeature(type=FeatureType.STATE, shape=(4,))
-    features_map["observation.handshake"] = "observation.handshake"
+    # Add handshake detection features as environment state
+    features["observation.environment_state"] = PolicyFeature(type=FeatureType.ENV, shape=(4,))
+    features_map["observation.environment_state"] = "observation.environment_state"
     
     class HandshakeEnvConfig(EnvConfig):
         task: str = "handshake_evaluation"
@@ -326,14 +326,14 @@ def evaluate_handshake_episode(
         if state_values:
             observation_frame["observation.state"] = np.array(state_values, dtype=np.float32)
         
-        # Add handshake features to state
+        # Add handshake features as environment state
         handshake_values = [
             observation["handshake_ready"],
             observation["handshake_confidence"], 
             observation["hand_position_x"],
             observation["hand_position_y"]
         ]
-        observation_frame["observation.handshake"] = np.array(handshake_values, dtype=np.float32)
+        observation_frame["observation.environment_state"] = np.array(handshake_values, dtype=np.float32)
         
         # Get policy action
         with torch.inference_mode():
