@@ -69,13 +69,12 @@ class HandshakeEvalPipelineConfig:
     eval: HandshakeEvalConfig
     output_dir: Path = Path("outputs/eval_handshake")
     display_data: bool = False
-    path: Path | None = None
     device: str = "cuda"
     seed: int | None = None
     
     def __post_init__(self):
         # Parse policy from CLI if provided
-        policy_path = parser.get_path_arg("policy.path")
+        policy_path = parser.get_path_arg("policy")
         if policy_path:
             cli_overrides = parser.get_cli_overrides("policy")
             self.policy = PreTrainedConfig.from_pretrained(policy_path, cli_overrides=cli_overrides)
@@ -84,7 +83,7 @@ class HandshakeEvalPipelineConfig:
     @classmethod
     def __get_path_fields__(cls) -> list[str]:
         """This enables the parser to load config from the policy using `--policy.path=local/dir`"""
-        return ["policy.path"]
+        return ["policy"]
 
 
 def wait_for_handshake_detection(
