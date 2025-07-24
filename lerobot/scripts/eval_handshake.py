@@ -69,7 +69,7 @@ class HandshakeEvalPipelineConfig:
     eval: HandshakeEvalConfig
     output_dir: Path = Path("outputs/eval_handshake")
     display_data: bool = False
-    path: Path
+    path: Path | None = None
     device: str = "cuda"
     seed: int | None = None
     
