@@ -128,7 +128,7 @@ class HandshakeEvalPipelineConfig:
     robot: RobotConfig
     policy: PreTrainedConfig | None = None
     eval: HandshakeEvalConfig = field(default_factory=HandshakeEvalConfig)
-    output_dir: Path = Path("outputs/eval_handshake")
+    output_dir: Path | None = None
     display_data: bool = False
     device: str = "cuda"
     seed: int | None = None
@@ -142,6 +142,13 @@ class HandshakeEvalPipelineConfig:
             self.policy.pretrained_path = policy_path
         else:
             raise ValueError("A policy path must be provided via --policy.path=local/dir for handshake evaluation")
+        
+        # Create output directory with timestamp if not provided
+        if self.output_dir is None:
+            import datetime
+            now = datetime.datetime.now()
+            timestamp = f"{now:%Y-%m-%d}_{now:%H-%M-%S}"
+            self.output_dir = Path("outputs/eval_handshake") / timestamp
     
     @classmethod
     def __get_path_fields__(cls) -> list[str]:
@@ -453,7 +460,9 @@ def eval_handshake(cfg: HandshakeEvalPipelineConfig):
         _init_rerun(session_name="handshake_evaluation")
     
     # Create output directory
+    logging.info(f"Creating output directory: {cfg.output_dir}")
     cfg.output_dir.mkdir(parents=True, exist_ok=True)
+    logging.info(f"Output directory created successfully: {cfg.output_dir.absolute()}")
     
     # Initialize robot
     robot = None
@@ -549,64 +558,74 @@ def eval_handshake(cfg: HandshakeEvalPipelineConfig):
         time.sleep(2.0)
     
     # Calculate final metrics
+    final_results = {
+        "num_episodes_completed": len(episode_results),
+        "num_episodes_attempted": cfg.eval.num_episodes,
+        "episode_results": episode_results,
+    }
+    
     if episode_results:
         avg_duration = np.mean([ep["episode_duration"] for ep in episode_results])
         avg_confidence = np.mean([ep["avg_handshake_confidence"] for ep in episode_results])
         avg_max_confidence = np.mean([ep["max_handshake_confidence"] for ep in episode_results])
         
-        final_results = {
-            "num_episodes_completed": len(episode_results),
-            "num_episodes_attempted": cfg.eval.num_episodes,
+        final_results.update({
             "avg_episode_duration": avg_duration,
             "avg_handshake_confidence": avg_confidence,
             "avg_max_handshake_confidence": avg_max_confidence,
-            "episode_results": episode_results,
-        }
-        
-        # Save results
-        import json
-        results_path = cfg.output_dir / "handshake_eval_results.json"
-        with open(results_path, "w") as f:
-            # Convert numpy types to python types for JSON serialization
-            json_results = {}
-            for key, value in final_results.items():
-                if isinstance(value, np.floating):
-                    json_results[key] = float(value)
-                elif isinstance(value, np.integer):
-                    json_results[key] = int(value)
-                elif key == "episode_results":
-                    # Handle episode results separately
-                    json_results[key] = []
-                    for ep in value:
-                        ep_clean = {}
-                        for ep_key, ep_val in ep.items():
-                            if isinstance(ep_val, (list, np.ndarray)):
-                                ep_clean[ep_key] = [float(x) if isinstance(x, np.floating) else x for x in ep_val]
-                            elif isinstance(ep_val, np.floating):
-                                ep_clean[ep_key] = float(ep_val)
-                            elif isinstance(ep_val, np.integer):
-                                ep_clean[ep_key] = int(ep_val)
-                            else:
-                                ep_clean[ep_key] = ep_val
-                        json_results[key].append(ep_clean)
-                else:
-                    json_results[key] = value
-            
-            json.dump(json_results, f, indent=2)
-        
-        # Print summary
-        print("\n" + "="*50)
-        print("HANDSHAKE EVALUATION SUMMARY")
-        print("="*50)
-        print(f"Episodes Completed: {len(episode_results)}/{cfg.eval.num_episodes}")
-        print(f"Average Episode Duration: {avg_duration:.1f}s")
-        print(f"Average Handshake Confidence: {avg_confidence:.3f}")
-        print(f"Average Max Handshake Confidence: {avg_max_confidence:.3f}")
-        print(f"Results saved to: {results_path}")
-        print("="*50)
-        
+        })
     else:
-        logging.error("No episodes were successfully completed")
+        final_results.update({
+            "avg_episode_duration": 0.0,
+            "avg_handshake_confidence": 0.0,
+            "avg_max_handshake_confidence": 0.0,
+        })
+        
+    # Save results
+    import json
+    results_path = cfg.output_dir / "handshake_eval_results.json"
+    logging.info(f"Saving results to: {results_path}")
+    with open(results_path, "w") as f:
+        # Convert numpy types to python types for JSON serialization
+        json_results = {}
+        for key, value in final_results.items():
+            if isinstance(value, np.floating):
+                json_results[key] = float(value)
+            elif isinstance(value, np.integer):
+                json_results[key] = int(value)
+            elif key == "episode_results":
+                # Handle episode results separately
+                json_results[key] = []
+                for ep in value:
+                    ep_clean = {}
+                    for ep_key, ep_val in ep.items():
+                        if isinstance(ep_val, (list, np.ndarray)):
+                            ep_clean[ep_key] = [float(x) if isinstance(x, np.floating) else x for x in ep_val]
+                        elif isinstance(ep_val, np.floating):
+                            ep_clean[ep_key] = float(ep_val)
+                        elif isinstance(ep_val, np.integer):
+                            ep_clean[ep_key] = int(ep_val)
+                        else:
+                            ep_clean[ep_key] = ep_val
+                    json_results[key].append(ep_clean)
+            else:
+                json_results[key] = value
+        
+        json.dump(json_results, f, indent=2)
+    
+    # Print summary
+    print("\n" + "="*50)
+    print("HANDSHAKE EVALUATION SUMMARY")
+    print("="*50)
+    print(f"Episodes Completed: {len(episode_results)}/{cfg.eval.num_episodes}")
+    if episode_results:
+        print(f"Average Episode Duration: {final_results['avg_episode_duration']:.1f}s")
+        print(f"Average Handshake Confidence: {final_results['avg_handshake_confidence']:.3f}")
+        print(f"Average Max Handshake Confidence: {final_results['avg_max_handshake_confidence']:.3f}")
+    else:
+        print("No episodes were successfully completed")
+    print(f"Results saved to: {results_path}")
+    print("="*50)
     
     # Cleanup
     if robot is not None:
