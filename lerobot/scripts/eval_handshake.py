@@ -52,8 +52,8 @@ from lerobot.configs.types import FeatureType
 import lerobot.common.robots.so101_follower # noqa: F401
 
 
-def create_handshake_env_config(robot: Robot) -> EnvConfig:
-    """Create a minimal environment config for handshake evaluation that matches the robot's features."""
+def create_handshake_env_config(robot: Robot, policy_config: PreTrainedConfig | None = None) -> EnvConfig:
+    """Create a minimal environment config for handshake evaluation that matches the robot's features and policy requirements."""
     
     # Create features based on robot's observation and action features
     features = {}
@@ -88,6 +88,15 @@ def create_handshake_env_config(robot: Robot) -> EnvConfig:
     # Add handshake detection features as environment state
     features["observation.environment_state"] = PolicyFeature(type=FeatureType.ENV, shape=(4,))
     features_map["observation.environment_state"] = "observation.environment_state"
+    
+    # If we have a policy config, ensure we include any required features that the policy was trained with
+    if policy_config and hasattr(policy_config, 'input_features'):
+        for key, feature in policy_config.input_features.items():
+            if key not in features:
+                # Add missing features that the policy expects
+                features[key] = feature
+                features_map[key] = key
+                logging.info(f"Added missing feature from policy config: {key} with shape {feature.shape}")
     
     class HandshakeEnvConfig(EnvConfig):
         task: str = "handshake_evaluation"
@@ -462,8 +471,14 @@ def eval_handshake(cfg: HandshakeEvalPipelineConfig):
     # Load trained policy (after robot is connected so we can access its features)
     logging.info("Loading trained handshake policy")
     try:
-        # Create environment config for policy loading
-        env_config = create_handshake_env_config(robot)
+        # First, load the policy config to see what features it expects
+        policy_config = PreTrainedConfig.from_pretrained(cfg.policy.pretrained_path)
+        logging.info(f"Policy config loaded. Input features: {list(policy_config.input_features.keys())}")
+        logging.info(f"Policy config input features details: {policy_config.input_features}")
+        logging.info(f"Policy config output features: {list(policy_config.output_features.keys())}")
+        
+        # Create environment config for policy loading, including any features the policy expects
+        env_config = create_handshake_env_config(robot, policy_config)
         policy = make_policy(cfg=cfg.policy, env_cfg=env_config)
         policy.eval()
     except Exception as e:
