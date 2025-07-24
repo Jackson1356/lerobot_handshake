@@ -59,24 +59,33 @@ def create_handshake_env_config(robot: Robot) -> EnvConfig:
     features = {}
     features_map = {}
     
-    # Add action features
+    # Add action features - group all robot actions into a single "action" feature
+    action_features = []
     for action_name, action_type in robot.action_features.items():
         if action_type == float:
-            features[f"action.{action_name}"] = PolicyFeature(type=FeatureType.ACTION, shape=(1,))
-            features_map[f"action.{action_name}"] = f"action.{action_name}"
+            action_features.append(action_name)
+    
+    if action_features:
+        features["action"] = PolicyFeature(type=FeatureType.ACTION, shape=(len(action_features),))
+        features_map["action"] = "action"
     
     # Add observation features
+    state_features = []
     for obs_name, obs_type in robot.observation_features.items():
         if obs_type == float:
-            # Robot joint positions
-            features[f"observation.{obs_name}"] = PolicyFeature(type=FeatureType.STATE, shape=(1,))
-            features_map[f"observation.{obs_name}"] = f"observation.{obs_name}"
+            # Robot joint positions - collect for state feature
+            state_features.append(obs_name)
         elif isinstance(obs_type, tuple) and len(obs_type) == 3:
-            # Camera images (height, width, channels)
-            features[f"observation.{obs_name}"] = PolicyFeature(type=FeatureType.VISUAL, shape=obs_type)
-            features_map[f"observation.{obs_name}"] = f"observation.{obs_name}"
+            # Camera images - map to observation.images.{camera_name}
+            features[f"observation.images.{obs_name}"] = PolicyFeature(type=FeatureType.VISUAL, shape=obs_type)
+            features_map[f"observation.images.{obs_name}"] = f"observation.images.{obs_name}"
     
-    # Add handshake detection features
+    # Add robot state feature (all joint positions grouped together)
+    if state_features:
+        features["observation.state"] = PolicyFeature(type=FeatureType.STATE, shape=(len(state_features),))
+        features_map["observation.state"] = "observation.state"
+    
+    # Add handshake detection features to state
     features["observation.handshake"] = PolicyFeature(type=FeatureType.STATE, shape=(4,))
     features_map["observation.handshake"] = "observation.handshake"
     
@@ -243,14 +252,7 @@ def evaluate_handshake_episode(
     episode_start_time = time.perf_counter()
     policy.reset()
     
-    # Prepare dataset features for policy input (same as record_handshake.py)
-    dataset_features = {
-        "observation.handshake": {
-            "dtype": "float32",
-            "shape": (4,),
-            "names": ["handshake_ready", "handshake_confidence", "hand_position_x", "hand_position_y"],
-        },
-    }
+
     
     handshake_confidences = []
     policy_actions = []
@@ -307,8 +309,31 @@ def evaluate_handshake_episode(
         observation["hand_position_x"] = hand_position_x
         observation["hand_position_y"] = hand_position_y
         
-        # Build observation frame for policy
-        observation_frame = build_dataset_frame(dataset_features, observation, prefix="observation")
+        # Build observation frame for policy - create the structure the policy expects
+        observation_frame = {}
+        
+        # Add camera images
+        for cam_name, cam_image in observation.items():
+            if isinstance(cam_image, np.ndarray) and cam_image.ndim == 3:
+                observation_frame[f"observation.images.{cam_name}"] = cam_image
+        
+        # Add robot state (all joint positions grouped together)
+        state_values = []
+        for obs_name, obs_value in observation.items():
+            if isinstance(obs_value, float) and obs_name.endswith('.pos'):
+                state_values.append(obs_value)
+        
+        if state_values:
+            observation_frame["observation.state"] = np.array(state_values, dtype=np.float32)
+        
+        # Add handshake features to state
+        handshake_values = [
+            observation["handshake_ready"],
+            observation["handshake_confidence"], 
+            observation["hand_position_x"],
+            observation["hand_position_y"]
+        ]
+        observation_frame["observation.handshake"] = np.array(handshake_values, dtype=np.float32)
         
         # Get policy action
         with torch.inference_mode():
