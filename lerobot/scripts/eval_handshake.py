@@ -38,7 +38,7 @@ from lerobot.common.cameras.opencv.configuration_opencv import OpenCVCameraConfi
 from lerobot.common.cameras.realsense.configuration_realsense import RealSenseCameraConfig  # noqa: F401
 from lerobot.common.datasets.utils import build_dataset_frame
 from lerobot.common.handshake_detection import ImprovedHandshakeDetector
-from lerobot.common.policies.factory import make_policy
+from lerobot.common.policies.factory import make_policy, get_policy_class
 from lerobot.common.policies.pretrained import PreTrainedPolicy
 from lerobot.common.robots import Robot, RobotConfig, make_robot_from_config  # noqa: F401
 from lerobot.common.utils.control_utils import predict_action
@@ -321,28 +321,42 @@ def evaluate_handshake_episode(
         # Build observation frame for policy - create the structure the policy expects
         observation_frame = {}
         
-        # Add camera images
+        # Add camera images if the policy expects them
         for cam_name, cam_image in observation.items():
             if isinstance(cam_image, np.ndarray) and cam_image.ndim == 3:
-                observation_frame[f"observation.images.{cam_name}"] = cam_image
+                # Check if policy expects this camera
+                expected_key = f"observation.images.{cam_name}"
+                if expected_key in policy.config.input_features:
+                    observation_frame[expected_key] = cam_image
+                else:
+                    # If policy doesn't expect this camera, try the generic key
+                    if "observation.images" in policy.config.input_features:
+                        observation_frame["observation.images"] = cam_image
+                        break  # Only add one image if using generic key
         
         # Add robot state (all joint positions grouped together)
-        state_values = []
-        for obs_name, obs_value in observation.items():
-            if isinstance(obs_value, float) and obs_name.endswith('.pos'):
-                state_values.append(obs_value)
-        
-        if state_values:
-            observation_frame["observation.state"] = np.array(state_values, dtype=np.float32)
+        if "observation.state" in policy.config.input_features:
+            state_values = []
+            for obs_name, obs_value in observation.items():
+                if isinstance(obs_value, float) and obs_name.endswith('.pos'):
+                    state_values.append(obs_value)
+            
+            if state_values:
+                observation_frame["observation.state"] = np.array(state_values, dtype=np.float32)
         
         # Add handshake features as environment state
-        handshake_values = [
-            observation["handshake_ready"],
-            observation["handshake_confidence"], 
-            observation["hand_position_x"],
-            observation["hand_position_y"]
-        ]
-        observation_frame["observation.environment_state"] = np.array(handshake_values, dtype=np.float32)
+        if "observation.environment_state" in policy.config.input_features:
+            handshake_values = [
+                observation["handshake_ready"],
+                observation["handshake_confidence"], 
+                observation["hand_position_x"],
+                observation["hand_position_y"]
+            ]
+            observation_frame["observation.environment_state"] = np.array(handshake_values, dtype=np.float32)
+        
+        # Log what we're providing vs what the policy expects
+        logging.debug(f"Policy expects: {list(policy.config.input_features.keys())}")
+        logging.debug(f"Providing: {list(observation_frame.keys())}")
         
         # Get policy action
         with torch.inference_mode():
@@ -471,16 +485,21 @@ def eval_handshake(cfg: HandshakeEvalPipelineConfig):
     # Load trained policy (after robot is connected so we can access its features)
     logging.info("Loading trained handshake policy")
     try:
-        # First, load the policy config to see what features it expects
-        policy_config = PreTrainedConfig.from_pretrained(cfg.policy.pretrained_path)
-        logging.info(f"Policy config loaded. Input features: {list(policy_config.input_features.keys())}")
-        logging.info(f"Policy config input features details: {policy_config.input_features}")
-        logging.info(f"Policy config output features: {list(policy_config.output_features.keys())}")
+        # For pretrained policies, we need to load them directly without overriding features
+        # The make_policy function overrides features even for pretrained policies, which breaks validation
+        policy_cls = get_policy_class(cfg.policy.type)
         
-        # Create environment config for policy loading, including any features the policy expects
-        env_config = create_handshake_env_config(robot, policy_config)
-        policy = make_policy(cfg=cfg.policy, env_cfg=env_config)
+        # Load the policy directly using from_pretrained to preserve original features
+        policy = policy_cls.from_pretrained(
+            pretrained_name_or_path=cfg.policy.pretrained_path,
+            config=cfg.policy,
+            **{"dataset_stats": None}  # No dataset stats for evaluation
+        )
         policy.eval()
+        
+        logging.info(f"Policy loaded successfully. Input features: {list(policy.config.input_features.keys())}")
+        logging.info(f"Policy output features: {list(policy.config.output_features.keys())}")
+        
     except Exception as e:
         logging.error(f"Failed to load policy: {e}")
         raise
